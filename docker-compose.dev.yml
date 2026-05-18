@@ -1,3 +1,6 @@
+# Dev: Redis + Backend + Worker en Docker (hot reload), Frontend nativo
+# Arrancar: ./dev.sh  (o ver README para pasos manuales)
+
 services:
   backend:
     build:
@@ -18,14 +21,14 @@ services:
       - MONTHLY_BUDGET_USD=${MONTHLY_BUDGET_USD:-50}
       - ENV=development
     volumes:
-      - ./backend/agentos:/app/agentos
+      - ./backend/agentos:/app/agentos   # hot reload del código Python
       - backend_data:/data
       - ./agents_config:/app/agents_config
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       redis:
         condition: service_healthy
-    command: uvicorn agentos.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uv run uvicorn agentos.main:app --host 0.0.0.0 --port 8000 --reload
 
   worker:
     build:
@@ -47,7 +50,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    command: python -m arq agentos.worker.tasks.WorkerSettings
+    command: uv run python -m arq agentos.worker.tasks.WorkerSettings
 
   redis:
     image: redis:7-alpine
@@ -62,19 +65,8 @@ services:
       timeout: 3s
       retries: 5
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
-    volumes:
-      - ./frontend/src:/app/src
-    depends_on:
-      - backend
+# Frontend: correr nativo con "cd frontend && npm run dev"
+# Ver dev.sh para el script completo de arranque
 
 volumes:
   backend_data:

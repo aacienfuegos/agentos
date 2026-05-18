@@ -13,24 +13,24 @@ Plataforma personal self-hosted para orquestar agentes de Claude. Lanza tareas a
 | Reverse proxy | Caddy (HTTPS automático) |
 | Acceso remoto | Tailscale (opcional) |
 
-## Instalación rápida
+## Desarrollo local (recomendado)
 
 ```bash
-# 1. Clonar
+# 1. Clonar y configurar
 git clone https://github.com/aacienfuegos/agentos
 cd agentos
-
-# 2. Configurar
 cp .env.example .env
-# Editar .env con tu ANTHROPIC_API_KEY, GITHUB_TOKEN, SECRET_KEY y ADMIN_PASSWORD
+# Editar .env con ANTHROPIC_API_KEY, GITHUB_TOKEN, SECRET_KEY, ADMIN_PASSWORD
 
-# 3. Arrancar (dev)
-docker compose -f docker-compose.dev.yml up -d
-
-# 4. Abrir
-# Frontend: http://localhost:3000
-# Backend API: http://localhost:8000/docs
+# 2. Arrancar todo con un comando
+./dev.sh
 ```
+
+Esto levanta en Docker: **Redis + Backend + Worker** (con hot reload de Python).
+El **frontend** corre nativo con `npm run dev` — hot reload instantáneo sin rebuilds de Docker.
+
+- Frontend: http://localhost:3000
+- Backend API docs: http://localhost:8000/docs
 
 ## Configuración
 
@@ -80,24 +80,11 @@ Configura un webhook en tu repo de GitHub:
 
 El agente `code-review` se lanzará automáticamente cuando abras o actualices un PR.
 
-## Desarrollo local (sin Docker)
+## Producción
 
 ```bash
-# Backend
-cd backend
-uv sync
-uv run uvicorn agentos.main:app --reload --port 8000
-
-# Worker (terminal separada)
-uv run python -m arq agentos.worker.tasks.WorkerSettings
-
-# Redis (Docker)
-docker run --rm -p 6379:6379 redis:7-alpine
-
-# Frontend (terminal separada)
-cd frontend
-npm install
-npm run dev
+cp .env.example .env  # configurar variables
+docker compose up -d
 ```
 
 ## Tests
