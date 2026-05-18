@@ -105,7 +105,6 @@ def _duration(run: Run) -> str:
 
 class WorkerSettings:
     functions = [run_agent_task]
-    redis_settings_from_dsn = settings.redis_url
     max_jobs = 10
     job_timeout = 3600
 

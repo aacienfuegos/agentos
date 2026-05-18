@@ -13,6 +13,16 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_DAYS = 7
 
+# Cached hash computed once at startup
+_PASSWORD_HASH: str | None = None
+
+
+def _get_password_hash() -> str:
+    global _PASSWORD_HASH
+    if _PASSWORD_HASH is None:
+        _PASSWORD_HASH = pwd_context.hash(settings.admin_password)
+    return _PASSWORD_HASH
+
 
 def _create_token() -> str:
     expire = datetime.utcnow() + timedelta(days=JWT_EXPIRE_DAYS)
@@ -35,7 +45,7 @@ class LoginRequest(BaseModel):
 
 @router.post("/login")
 def login(request: LoginRequest, response: Response):
-    if not pwd_context.verify(request.password, _hashed_password()):
+    if not pwd_context.verify(request.password, _get_password_hash()):
         # fallback: plain comparison for dev convenience
         if request.password != settings.admin_password:
             raise HTTPException(401, "Invalid password")
@@ -61,8 +71,3 @@ def me(agentos_token: str | None = Cookie(default=None)):
     if not verify_token(agentos_token):
         raise HTTPException(401, "Not authenticated")
     return {"user": "admin"}
-
-
-def _hashed_password() -> str:
-    # bcrypt hash the password on first check — cached after first call
-    return pwd_context.hash(settings.admin_password)
