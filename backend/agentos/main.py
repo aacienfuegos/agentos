@@ -3,7 +3,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .database import create_db_and_tables
+from .config import settings
+from .database import create_db_and_tables, engine
 from .api import agents, runs, schedules, stream, stats, webhooks, auth
 from .worker.scheduler import start_scheduler, stop_scheduler
 from .agents.builtin import seed_builtin_agents
@@ -43,4 +44,28 @@ app.include_router(webhooks.router, prefix="/api/webhooks", tags=["webhooks"])
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "0.1.0"}
+    import redis.asyncio as aioredis
+    redis_ok = False
+    try:
+        r = aioredis.from_url(settings.redis_url, socket_connect_timeout=2)
+        await r.ping()
+        await r.aclose()
+        redis_ok = True
+    except Exception:
+        pass
+
+    from sqlmodel import Session, text
+    db_ok = False
+    try:
+        with Session(engine) as s:
+            s.exec(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        pass
+
+    status = "ok" if (redis_ok and db_ok) else "degraded"
+    return {
+        "status": status,
+        "version": "0.1.0",
+        "services": {"redis": redis_ok, "database": db_ok},
+    }

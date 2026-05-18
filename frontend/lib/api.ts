@@ -55,6 +55,12 @@ export interface Stats {
   budget_exceeded: boolean;
 }
 
+export interface HealthStatus {
+  status: "ok" | "degraded";
+  version: string;
+  services: { redis: boolean; database: boolean };
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
@@ -93,4 +99,5 @@ export const api = {
       apiFetch<void>(`/api/schedules/${id}`, { method: "DELETE" }),
   },
   stats: () => apiFetch<Stats>("/api/stats"),
+  health: () => apiFetch<HealthStatus>("/api/health"),
 };

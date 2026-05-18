@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Run, Agent, Stats } from "@/lib/api";
+import { api, Run, Agent, Stats, HealthStatus } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,6 +48,7 @@ export default function Dashboard() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [health, setHealth] = useState<HealthStatus | null>(null);
   const [launching, setLaunching] = useState<string | null>(null);
   const [customPrompt, setCustomPrompt] = useState("");
   const [showCustom, setShowCustom] = useState(false);
@@ -59,10 +60,20 @@ export default function Dashboard() {
     setStats(s);
   };
 
+  const fetchHealth = async () => {
+    try {
+      setHealth(await api.health());
+    } catch {
+      setHealth({ status: "degraded", version: "?", services: { redis: false, database: false } });
+    }
+  };
+
   useEffect(() => {
     fetchData();
+    fetchHealth();
     const interval = setInterval(fetchData, 5000);
-    return () => clearInterval(interval);
+    const healthInterval = setInterval(fetchHealth, 30000);
+    return () => { clearInterval(interval); clearInterval(healthInterval); };
   }, []);
 
   const launchAgent = async (agentId: string, params: Record<string, unknown> = {}) => {
@@ -149,6 +160,30 @@ export default function Dashboard() {
               {stats.budget_exceeded && (
                 <p className="mt-3 text-xs text-red-400 text-center">⚠ Budget mensual superado</p>
               )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Health */}
+        {health && (
+          <Card className="bg-zinc-900 border-zinc-800">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${health.status === "ok" ? "bg-green-500" : "bg-red-500"}`} />
+                <CardTitle className="text-sm font-medium text-zinc-400">
+                  Servicios — {health.status === "ok" ? "operativos" : "degradados"}
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-4 text-xs">
+                {Object.entries(health.services).map(([svc, ok]) => (
+                  <div key={svc} className="flex items-center gap-1.5">
+                    <span className={`w-1.5 h-1.5 rounded-full ${ok ? "bg-green-500" : "bg-red-500"}`} />
+                    <span className="text-zinc-400">{svc}</span>
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
         )}
