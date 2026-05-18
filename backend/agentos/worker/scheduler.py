@@ -1,14 +1,17 @@
-from datetime import datetime
+import logging
+from datetime import datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from arq import create_pool
 from arq.connections import RedisSettings
-from sqlmodel import Session, select
+from sqlmodel import Session, select, delete
 
 from ..config import settings
 from ..database import engine
-from ..models import Schedule, Run
+from ..models import Schedule, Run, LogEntry, RunStatus
+
+logger = logging.getLogger(__name__)
 
 _scheduler = AsyncIOScheduler()
 
@@ -41,11 +44,39 @@ async def _fire_schedule(schedule_id: str) -> None:
     await pool.aclose()
 
 
+async def _cleanup_old_logs() -> None:
+    cutoff = datetime.utcnow() - timedelta(days=settings.log_retention_days)
+    with Session(engine) as session:
+        old_runs = session.exec(
+            select(Run.id).where(
+                Run.finished_at < cutoff,
+                Run.status.in_([RunStatus.success, RunStatus.failed, RunStatus.cancelled]),
+            )
+        ).all()
+        if not old_runs:
+            return
+        deleted = session.exec(
+            delete(LogEntry).where(LogEntry.run_id.in_(old_runs))
+        ).rowcount
+        session.commit()
+    if deleted:
+        logger.info("Log retention: deleted %d LogEntry records older than %d days", deleted, settings.log_retention_days)
+
+
 async def start_scheduler() -> None:
     with Session(engine) as session:
         schedules = session.exec(select(Schedule).where(Schedule.enabled == True)).all()
     for schedule in schedules:
         add_schedule(schedule)
+
+    # Daily log cleanup at 3am
+    _scheduler.add_job(
+        _cleanup_old_logs,
+        CronTrigger(hour=3, minute=0),
+        id="log_retention_cleanup",
+        replace_existing=True,
+    )
+
     _scheduler.start()
 
 
