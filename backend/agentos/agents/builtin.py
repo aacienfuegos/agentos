@@ -1,7 +1,15 @@
+import logging
+from pathlib import Path
+
+import yaml
 from sqlmodel import Session
 
 from ..database import engine
 from ..models import AgentDefinition
+
+logger = logging.getLogger(__name__)
+
+AGENTS_CONFIG_DIR = Path("/app/agents_config")
 
 BUILTIN_AGENTS: list[dict] = [
     {
@@ -86,18 +94,42 @@ BUILTIN_AGENTS: list[dict] = [
 ]
 
 
+def _load_yaml_agents() -> list[dict]:
+    agents = []
+    if not AGENTS_CONFIG_DIR.exists():
+        return agents
+    for path in sorted(AGENTS_CONFIG_DIR.glob("*.yaml")) + sorted(AGENTS_CONFIG_DIR.glob("*.yml")):
+        try:
+            with open(path) as f:
+                data = yaml.safe_load(f)
+            if not isinstance(data, dict) or "id" not in data:
+                logger.warning("Skipping %s: missing 'id' field", path.name)
+                continue
+            data.setdefault("is_builtin", False)
+            agents.append(data)
+            logger.info("Loaded agent '%s' from %s", data["id"], path.name)
+        except Exception as e:
+            logger.error("Error loading agent from %s: %s", path.name, e)
+    return agents
+
+
 def seed_builtin_agents() -> None:
+    from datetime import datetime
+
+    all_agents = BUILTIN_AGENTS + _load_yaml_agents()
+
     with Session(engine) as session:
-        for data in BUILTIN_AGENTS:
+        for data in all_agents:
             existing = session.get(AgentDefinition, data["id"])
             if existing:
-                # Update system prompt and tools but preserve user customizations
-                existing.name = data["name"]
-                existing.description = data["description"]
-                existing.is_builtin = True
+                existing.name = data.get("name", existing.name)
+                existing.description = data.get("description", existing.description)
+                existing.is_builtin = data.get("is_builtin", existing.is_builtin)
                 session.add(existing)
             else:
-                from datetime import datetime
-                agent = AgentDefinition(**data)
+                agent = AgentDefinition(**{
+                    k: v for k, v in data.items()
+                    if k in AgentDefinition.model_fields
+                })
                 session.add(agent)
         session.commit()
