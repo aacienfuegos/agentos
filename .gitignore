@@ -37,3 +37,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Claude Code — machine-specific, no commitear
+.claude/settings.local.json

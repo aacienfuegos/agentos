@@ -136,3 +136,25 @@ El `AnthropicRunner` ejecuta el loop agéntico (streaming), publica cada evento 
 - Docker socket mount (`/var/run/docker.sock`) solo para `vuln_scan` — uso personal, repos propios
 - Auth: JWT en cookie httpOnly, password hasheado con bcrypt en `.env`
 - Tailscale recomendado para acceso remoto (ver docs/tailscale.md)
+
+## Estado actual del desarrollo
+
+**Última rama activa:** `feat/portfolio-updater-issue-12`
+
+### PRs abiertas (pendientes de merge en main)
+
+| PR | Rama | Descripción |
+|----|------|-------------|
+| #22 | `feat/jwt-auth-middleware-issue-6` | JWT middleware global + página de login |
+| #28 | `feat/code-review-agent-issue-11` | Code review agent — anti-spam y review builder |
+| #29 | `feat/portfolio-updater-issue-12` | Portfolio updater — `github_list_repos` + message builder |
+
+### Fases pendientes del roadmap
+
+| Fase | Issues | Descripción |
+|------|--------|-------------|
+| phase:polish | #18, #19, #20, #21, #26 | Stats de uso, ntfy, Caddy+Tailscale, export markdown, redirect 401 |
+| phase:knowledge-1 | #30, #31, #32 | KnowledgeAgent: modelo DB, runner con contexto destilado, UI |
+| phase:knowledge-2 | #33, #34, #35, #36 | Knowledge Agent: system prompt auto-generado, automatizaciones |
+| phase:multimodel-1 | #37–#42 | Runners OpenAI/Gemini, config multi-modelo, credenciales por proveedor |
+| phase:multimodel-2 | #43, #44, #45 | Consultas cruzadas entre modelos, modo paralelo, UI comparativa |
