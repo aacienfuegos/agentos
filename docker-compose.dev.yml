@@ -1,0 +1,81 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:////data/agentos.db
+      - REDIS_URL=redis://redis:6379
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-dev-secret}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-prod}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - NTFY_URL=${NTFY_URL:-}
+      - MONTHLY_BUDGET_USD=${MONTHLY_BUDGET_USD:-50}
+      - ENV=development
+    volumes:
+      - ./backend/agentos:/app/agentos
+      - backend_data:/data
+      - ./agents_config:/app/agents_config
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: uvicorn agentos.main:app --host 0.0.0.0 --port 8000 --reload
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=sqlite:////data/agentos.db
+      - REDIS_URL=redis://redis:6379
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - NTFY_URL=${NTFY_URL:-}
+      - ENV=development
+    volumes:
+      - ./backend/agentos:/app/agentos
+      - backend_data:/data
+      - ./agents_config:/app/agents_config
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: python -m arq agentos.worker.tasks.WorkerSettings
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+    volumes:
+      - ./frontend/src:/app/src
+    depends_on:
+      - backend
+
+volumes:
+  backend_data:
+  redis_data:

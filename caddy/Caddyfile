@@ -1,0 +1,12 @@
+# Production: bind to Tailscale IP
+# Set TAILSCALE_IP in .env
+{$TAILSCALE_IP:localhost}:443 {
+    reverse_proxy /api/* backend:8000
+    reverse_proxy frontend:3000
+}
+
+# Local HTTP fallback
+:80 {
+    reverse_proxy /api/* backend:8000
+    reverse_proxy frontend:3000
+}
