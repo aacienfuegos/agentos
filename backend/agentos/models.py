@@ -71,5 +71,5 @@ class LogEntry(SQLModel, table=True):
     run_id: str = Field(foreign_key="runs.id", index=True)
     level: str  # "info" | "tool_use" | "tool_result" | "error" | "done"
     message: str
-    metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    extra: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)

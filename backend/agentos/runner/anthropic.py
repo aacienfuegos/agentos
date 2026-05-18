@@ -5,9 +5,11 @@ from datetime import datetime
 
 import redis.asyncio as aioredis
 from anthropic import AsyncAnthropic
+from sqlmodel import Session
 
 from ..config import settings
-from ..models import Run, AgentDefinition, RunStatus
+from ..database import engine
+from ..models import Run, AgentDefinition, RunStatus, LogEntry
 from ..tools import TOOL_REGISTRY, get_tool_schemas
 
 
@@ -65,6 +67,10 @@ class AnthropicRunner:
 
                 if response.stop_reason == "end_turn":
                     output = self._extract_text(response)
+                    # Persist final output as a log entry for replay
+                    with Session(engine) as session:
+                        session.add(LogEntry(run_id=run.id, level="output", message=output))
+                        session.commit()
                     await self._publish(redis, run.id, "done", output)
                     return RunResult(
                         output=output,
@@ -134,6 +140,18 @@ class AnthropicRunner:
     ) -> None:
         payload = json.dumps({"level": level, "message": message, "metadata": metadata})
         await redis.publish(f"run:{run_id}:logs", payload)
+
+        # Persist non-streaming events to DB so completed runs can replay logs
+        if level not in ("info", "done"):
+            with Session(engine) as session:
+                entry = LogEntry(
+                    run_id=run_id,
+                    level=level,
+                    message=message[:2000],
+                    extra=metadata,
+                )
+                session.add(entry)
+                session.commit()
 
     def _build_user_message(self, input_params: dict) -> str:
         if "user_message" in input_params:

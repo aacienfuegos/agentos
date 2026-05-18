@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime
 
 from arq import ArqRedis
+from arq.connections import RedisSettings
 from sqlmodel import Session
 
 from ..config import settings
@@ -105,10 +106,6 @@ def _duration(run: Run) -> str:
 
 class WorkerSettings:
     functions = [run_agent_task]
+    redis_settings = RedisSettings.from_dsn(settings.redis_url)
     max_jobs = 10
     job_timeout = 3600
-
-    @classmethod
-    def redis_settings(cls):
-        from arq.connections import RedisSettings
-        return RedisSettings.from_dsn(settings.redis_url)

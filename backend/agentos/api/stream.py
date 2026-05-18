@@ -25,7 +25,7 @@ async def _log_event_generator(run_id: str) -> AsyncGenerator[str, None]:
                 select(LogEntry).where(LogEntry.run_id == run_id).order_by(LogEntry.id)
             ).all()
             for log in logs:
-                payload = {"level": log.level, "message": log.message, "metadata": log.metadata}
+                payload = {"level": log.level, "message": log.message, "metadata": log.extra}
                 yield f"data: {json.dumps(payload)}\n\n"
             yield 'event: done\ndata: {}\n\n'
             return
