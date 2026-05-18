@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Link from "next/link";
+import LogoutButton from "@/components/LogoutButton";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/agents" className="text-zinc-400 hover:text-zinc-100 transition-colors">Agentes</Link>
               <Link href="/schedules" className="text-zinc-400 hover:text-zinc-100 transition-colors">Automatizaciones</Link>
             </div>
+            <LogoutButton />
           </div>
         </nav>
         <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">

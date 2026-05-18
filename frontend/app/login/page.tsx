@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -27,7 +28,8 @@ export default function LoginPage() {
         setError("Contraseña incorrecta");
         return;
       }
-      router.push("/");
+      const next = searchParams.get("next");
+      router.push(next ?? "/");
     } catch {
       setError("Error de conexión con el servidor");
     } finally {
@@ -36,33 +38,41 @@ export default function LoginPage() {
   };
 
   return (
+    <form onSubmit={handleLogin} className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4">
+      <div>
+        <label className="block text-sm text-zinc-400 mb-1.5">Contraseña</label>
+        <input
+          type="password"
+          className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-violet-500"
+          placeholder="••••••••"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoFocus
+        />
+      </div>
+      {error && <p className="text-sm text-red-400">{error}</p>}
+      <Button
+        type="submit"
+        className="w-full bg-violet-600 hover:bg-violet-700"
+        disabled={loading || !password}
+      >
+        {loading ? "Entrando…" : "Entrar"}
+      </Button>
+    </form>
+  );
+}
+
+export default function LoginPage() {
+  return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-950">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-mono font-bold text-violet-400">AgentOS</h1>
           <p className="text-zinc-500 text-sm mt-1">Panel de control de agentes</p>
         </div>
-        <form onSubmit={handleLogin} className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4">
-          <div>
-            <label className="block text-sm text-zinc-400 mb-1.5">Contraseña</label>
-            <input
-              type="password"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-violet-500"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoFocus
-            />
-          </div>
-          {error && <p className="text-sm text-red-400">{error}</p>}
-          <Button
-            type="submit"
-            className="w-full bg-violet-600 hover:bg-violet-700"
-            disabled={loading || !password}
-          >
-            {loading ? "Entrando…" : "Entrar"}
-          </Button>
-        </form>
+        <Suspense>
+          <LoginForm />
+        </Suspense>
       </div>
     </div>
   );
