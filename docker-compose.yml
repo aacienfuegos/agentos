@@ -16,9 +16,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_BACKEND_URL=${BACKEND_URL:-http://localhost:8000}
     restart: unless-stopped
-    environment:
-      - NEXT_PUBLIC_BACKEND_URL=${BACKEND_URL:-http://localhost:8000}
     depends_on:
       - backend
 

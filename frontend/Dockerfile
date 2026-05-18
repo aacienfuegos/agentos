@@ -5,6 +5,8 @@ COPY package*.json ./
 RUN npm ci --frozen-lockfile
 
 COPY . .
+ARG NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL
 RUN npm run build
 
 FROM node:22-alpine AS runner
