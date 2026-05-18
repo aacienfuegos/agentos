@@ -2,6 +2,7 @@ from .filesystem import read_file, write_file, list_directory, run_command
 from .github import (
     github_list_prs, github_get_pr_diff, github_post_comment,
     github_list_issues, github_get_file, github_push_file,
+    github_list_repos,
 )
 from .web import fetch_url
 from .notifications import send_notification
@@ -17,6 +18,7 @@ TOOL_REGISTRY: dict = {
     "github_list_issues": github_list_issues,
     "github_get_file": github_get_file,
     "github_push_file": github_push_file,
+    "github_list_repos": github_list_repos,
     "fetch_url": fetch_url,
     "send_notification": send_notification,
 }
@@ -144,6 +146,28 @@ TOOL_SCHEMAS: dict[str, dict] = {
                 "branch": {"type": "string", "default": "main"},
             },
             "required": ["repo", "path", "content", "message"],
+        },
+    },
+    "github_list_repos": {
+        "name": "github_list_repos",
+        "description": "List public repositories for a GitHub user (skips forks)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "username": {"type": "string", "description": "GitHub username"},
+                "type": {
+                    "type": "string",
+                    "enum": ["public", "all"],
+                    "default": "public",
+                    "description": "Filter repos by type",
+                },
+                "sort": {
+                    "type": "string",
+                    "enum": ["updated", "created", "pushed", "full_name"],
+                    "default": "updated",
+                },
+            },
+            "required": ["username"],
         },
     },
     "fetch_url": {
