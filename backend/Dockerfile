@@ -26,7 +26,9 @@ RUN uv sync --frozen --no-dev
 COPY agentos/ ./agentos/
 
 # Crear usuario no-root — claude --dangerously-skip-permissions prohíbe root
-RUN useradd -m -u 1001 -G docker worker \
+# UID configurable via build arg para que coincida con el usuario del host en dev
+ARG UID=1001
+RUN useradd -m -u ${UID} -G docker worker \
     && mkdir -p /data /app/agents_config \
     && chown -R worker:worker /data /app
 

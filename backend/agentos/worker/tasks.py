@@ -30,6 +30,10 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
         session.add(run)
         session.commit()
 
+        # Detach before session closes so attributes remain accessible after expiry
+        session.expunge(run)
+        session.expunge(agent)
+
     runner = ClaudeCodeRunner()
 
     try:
@@ -38,17 +42,21 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
             timeout=agent.timeout_seconds,
         )
 
-        with Session(engine) as session:
+        with Session(engine, expire_on_commit=False) as session:
             run = session.get(Run, run_id)
             run.status = RunStatus.success
             run.output = result.output
+            run.tokens_input = result.tokens_input
+            run.tokens_output = result.tokens_output
             run.finished_at = datetime.utcnow()
             session.add(run)
             session.commit()
+            duration = _duration(run)
+            session.expunge(run)
 
         await send_notification(
             title=f"✅ {agent.name} completado",
-            message=f"Duración: {_duration(run)}",
+            message=f"Duración: {duration}",
             priority="default",
         )
 

@@ -70,6 +70,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error("Unauthorized");
   }
   if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+  if (res.status === 204) return undefined as unknown as T;
   return res.json();
 }
 

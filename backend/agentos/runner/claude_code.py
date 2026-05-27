@@ -31,6 +31,7 @@ class ClaudeCodeRunner:
             "claude",
             "-p", self._build_user_message(run.input_params, agent.id),
             "--output-format", "stream-json",
+            "--verbose",
             "--dangerously-skip-permissions",
             "--no-session-persistence",
         ]
@@ -54,6 +55,8 @@ class ClaudeCodeRunner:
         )
 
         output = ""
+        tokens_input = 0
+        tokens_output = 0
 
         try:
             async for raw_line in process.stdout:
@@ -72,6 +75,9 @@ class ClaudeCodeRunner:
 
                 if event.get("type") == "result":
                     output = event.get("result", "")
+                    usage = event.get("usage", {})
+                    tokens_input = usage.get("input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
+                    tokens_output = usage.get("output_tokens", 0)
 
                 await self._handle_event(redis, run.id, event, output)
 
@@ -87,7 +93,7 @@ class ClaudeCodeRunner:
             if process.returncode is None:
                 process.terminate()
 
-        return RunResult(output=output)
+        return RunResult(output=output, tokens_input=tokens_input, tokens_output=tokens_output)
 
     async def _handle_event(
         self, redis: aioredis.Redis, run_id: str, event: dict, final_output: str
@@ -134,7 +140,7 @@ class ClaudeCodeRunner:
         payload = json.dumps({"level": level, "message": message, "metadata": metadata})
         await redis.publish(f"run:{run_id}:logs", payload)
 
-        if level not in ("info", "done"):
+        if level not in ("done",):
             with Session(engine) as session:
                 session.add(LogEntry(
                     run_id=run_id,

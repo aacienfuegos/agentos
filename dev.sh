@@ -8,6 +8,10 @@ set -e
 # Cargar .env si existe
 [ -f .env ] && export $(grep -v '^#' .env | xargs)
 
+# UID es variable readonly de bash, no se exporta automáticamente al entorno
+# pero docker-compose.dev.yml lo necesita como build arg para el worker
+export UID=$(id -u)
+
 echo "🚀 Arrancando servicios Docker (Redis + Backend + Worker)..."
 docker compose -f docker-compose.dev.yml up -d --build
 

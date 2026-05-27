@@ -32,6 +32,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        UID: ${UID:-1001}
     restart: unless-stopped
     environment:
       - DATABASE_URL=sqlite:////data/agentos.db
@@ -46,8 +48,8 @@ services:
       - backend_data:/data
       - ./agents_config:/app/agents_config
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${HOME}/.claude:/home/worker/.claude:ro
-      - ${HOME}/.claude.json:/home/worker/.claude.json:ro
+      - ${HOME}/.claude:/home/worker/.claude
+      - ${HOME}/.claude.json:/home/worker/.claude.json
     depends_on:
       redis:
         condition: service_healthy
