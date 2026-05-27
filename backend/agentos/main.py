@@ -26,17 +26,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://frontend:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 _PUBLIC_PATHS = {"/api/health", "/api/auth/login", "/api/webhooks/github"}
 
 
+# Auth middleware is added first so CORS (added after) wraps it as outermost.
+# Starlette applies middlewares last-in-first-out: the last add_middleware call
+# becomes the outermost layer, ensuring CORS headers are present on every
+# response including 401s.
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next) -> Response:
     if request.url.path in _PUBLIC_PATHS or request.url.path.startswith("/docs"):
@@ -45,6 +41,15 @@ async def auth_middleware(request: Request, call_next) -> Response:
     if not verify_token(token):
         return Response(content='{"detail":"Not authenticated"}', status_code=401, media_type="application/json")
     return await call_next(request)
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://frontend:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(agents.router, prefix="/api/agents", tags=["agents"])
