@@ -84,8 +84,8 @@ export function LogStream({ runId, isLive }: { runId: string; isLive: boolean })
   }, [runId, isLive, backendUrl]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
+    if (isLive) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs, isLive]);
 
   const copyLogs = () => {
     const text = logs
