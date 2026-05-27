@@ -119,12 +119,15 @@ def seed_builtin_agents() -> None:
     all_agents = BUILTIN_AGENTS + _load_yaml_agents()
 
     with Session(engine) as session:
+        mutable_fields = {"name", "description", "system_prompt", "tools", "model", "max_tokens", "timeout_seconds", "is_builtin"}
+
         for data in all_agents:
             existing = session.get(AgentDefinition, data["id"])
             if existing:
-                existing.name = data.get("name", existing.name)
-                existing.description = data.get("description", existing.description)
-                existing.is_builtin = data.get("is_builtin", existing.is_builtin)
+                for field in mutable_fields:
+                    if field in data:
+                        setattr(existing, field, data[field])
+                existing.updated_at = datetime.utcnow()
                 session.add(existing)
             else:
                 agent = AgentDefinition(**{
