@@ -5,10 +5,15 @@ WORKDIR /app
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install system deps for docker CLI (needed by vuln_scan runner)
+# Install system deps + Node.js (para claude CLI)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     docker.io \
     git \
+    curl \
+    ca-certificates \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g @anthropic-ai/claude-code \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files first for layer caching
