@@ -137,9 +137,6 @@ export default function RunDetail() {
         </div>
       </div>
 
-      {/* Logs */}
-      <LogStream runId={id} isLive={isLive} />
-
       {/* Output */}
       {run.output && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg">
@@ -167,6 +164,9 @@ export default function RunDetail() {
           <p className="text-sm text-red-200">{run.error}</p>
         </div>
       )}
+
+      {/* Logs */}
+      <LogStream runId={id} isLive={isLive} />
     </div>
   );
 }
