@@ -1,27 +1,20 @@
+import hmac
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Response, Cookie
 from jose import jwt, JWTError
-from passlib.context import CryptContext
 from pydantic import BaseModel
 
 from ..config import settings
 
 router = APIRouter()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_DAYS = 7
 
-# Cached hash computed once at startup
-_PASSWORD_HASH: str | None = None
 
-
-def _get_password_hash() -> str:
-    global _PASSWORD_HASH
-    if _PASSWORD_HASH is None:
-        _PASSWORD_HASH = pwd_context.hash(settings.admin_password)
-    return _PASSWORD_HASH
+def _verify_password(plain: str) -> bool:
+    return hmac.compare_digest(plain.encode(), settings.admin_password.encode())
 
 
 def _create_token() -> str:
@@ -45,10 +38,8 @@ class LoginRequest(BaseModel):
 
 @router.post("/login")
 def login(request: LoginRequest, response: Response):
-    if not pwd_context.verify(request.password, _get_password_hash()):
-        # fallback: plain comparison for dev convenience
-        if request.password != settings.admin_password:
-            raise HTTPException(401, "Invalid password")
+    if not _verify_password(request.password):
+        raise HTTPException(401, "Invalid password")
     token = _create_token()
     response.set_cookie(
         key="agentos_token",
