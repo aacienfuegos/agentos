@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 
 from ..config import settings
 from ..database import get_session
-from ..models import Run, RunStatus, AgentDefinition
+from ..models import Run, RunStatus, AgentDefinition, LogEntry
 
 router = APIRouter()
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -63,6 +63,16 @@ def get_run(run_id: str, session: SessionDep) -> Run:
     if not run:
         raise HTTPException(404, "Run not found")
     return run
+
+
+@router.get("/{run_id}/logs")
+def get_run_logs(run_id: str, session: SessionDep) -> list[LogEntry]:
+    run = session.get(Run, run_id)
+    if not run:
+        raise HTTPException(404, "Run not found")
+    return session.exec(
+        select(LogEntry).where(LogEntry.run_id == run_id).order_by(LogEntry.id)
+    ).all()
 
 
 @router.delete("/{run_id}", status_code=204)
