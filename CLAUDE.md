@@ -178,3 +178,4 @@ El `AnthropicRunner` ejecuta el loop agéntico (streaming), publica cada evento 
 | phase:knowledge-2 | #33, #34, #35, #36 | Knowledge Agent: system prompt auto-generado, automatizaciones |
 | phase:multimodel-1 | #37–#42 | Runners OpenAI/Gemini, config multi-modelo, credenciales por proveedor |
 | phase:multimodel-2 | #43, #44, #45 | Consultas cruzadas entre modelos, modo paralelo, UI comparativa |
+| phase:scrum-master | pendiente | Agente scrum master: propaga cambios de workflow/CLAUDE.md a todos los repos de dev + scaffolding de proyectos nuevos |
