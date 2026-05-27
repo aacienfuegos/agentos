@@ -40,6 +40,8 @@ services:
       - REDIS_URL=redis://redis:6379
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-prod}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
       - NTFY_URL=${NTFY_URL:-}
       - ENV=development
     volumes:

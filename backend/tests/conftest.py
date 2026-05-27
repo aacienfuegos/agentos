@@ -9,10 +9,12 @@ os.environ.setdefault("ADMIN_PASSWORD", "testpass")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from jose import jwt
 from sqlalchemy import StaticPool
 from sqlmodel import SQLModel, Session, create_engine
 
@@ -67,6 +69,11 @@ def _reset_db():
     SQLModel.metadata.drop_all(_ENGINE)
 
 
+def _make_test_token() -> str:
+    expire = datetime.utcnow() + timedelta(days=1)
+    return jwt.encode({"sub": "admin", "exp": expire}, "test-secret", algorithm="HS256")
+
+
 @pytest.fixture
 def app_client(_reset_db):
     """Synchronous TestClient with the in-memory DB and no scheduler."""
@@ -83,6 +90,7 @@ def app_client(_reset_db):
         ),
     ):
         with TestClient(app, raise_server_exceptions=True) as client:
+            client.cookies.set("agentos_token", _make_test_token())
             yield client
 
     app.dependency_overrides.clear()
