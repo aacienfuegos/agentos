@@ -162,7 +162,7 @@ en `log_entries`. Tokens y coste se extraen del evento `result` final.
 
 ## Estado actual del desarrollo
 
-**Última rama activa:** `refactor/claude-code-runner-issue-48` — mergeada a main (2026-05-28)
+**Última rama activa:** `feat/polish-logs-copy-timezone-issue-52` — mergeada a main (2026-05-28)
 
 ### PRs abiertas (pendientes de merge en develop)
 
