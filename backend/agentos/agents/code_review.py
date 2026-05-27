@@ -1,8 +1,4 @@
-"""
-Code review agent logic — system prompt and input builder.
-The actual execution is handled by AnthropicRunner using the agent definition from DB.
-This module provides helpers for the code review workflow.
-"""
+"""Code review helpers — anti-spam check and user message builder."""
 from datetime import datetime, timedelta
 
 from sqlmodel import Session, select
@@ -51,23 +47,22 @@ def was_recently_reviewed(repo: str, pr_number: int, within_minutes: int = 60) -
 
 
 def build_review_message(repo: str, pr_number: int | None, focus: str = "all") -> str:
-    """Build the user message for the code review agent."""
     if pr_number:
         return (
             f"Por favor revisa el PR #{pr_number} del repositorio {repo}.\n"
             f"Foco: {focus}\n\n"
             f"Pasos:\n"
-            f"1. Obtén el diff del PR usando github_get_pr_diff\n"
-            f"2. Analiza el código con el foco indicado\n"
-            f"3. Publica tu review como comentario en el PR usando github_post_comment\n"
-            f"4. Retorna el resumen del review"
+            f"1. `gh pr diff {pr_number} --repo {repo}` para obtener el diff\n"
+            f"2. `gh pr view {pr_number} --repo {repo}` para ver el contexto\n"
+            f"3. Analiza el código con el foco indicado\n"
+            f"4. `gh pr comment {pr_number} --repo {repo} --body '<review>'` para publicar\n"
+            f"5. Retorna el resumen del review"
         )
     return (
         f"Por favor revisa todos los PRs abiertos del repositorio {repo}.\n"
         f"Foco: {focus}\n\n"
         f"Pasos:\n"
-        f"1. Lista los PRs abiertos usando github_list_prs\n"
-        f"2. Para cada PR, obtén el diff y analiza el código\n"
-        f"3. Publica tu review como comentario en cada PR\n"
-        f"4. Retorna un resumen de todos los PRs revisados"
+        f"1. `gh pr list --repo {repo} --json number,title,author` para listar PRs\n"
+        f"2. Para cada PR: obtén el diff, analiza y publica comentario\n"
+        f"3. Retorna un resumen de todos los PRs revisados"
     )

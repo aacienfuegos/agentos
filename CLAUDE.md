@@ -180,3 +180,4 @@ El `AnthropicRunner` ejecuta el loop agéntico (streaming), publica cada evento 
 | phase:multimodel-2 | #43, #44, #45 | Consultas cruzadas entre modelos, modo paralelo, UI comparativa |
 | phase:scrum-master | pendiente | Agente scrum master: propaga cambios de workflow/CLAUDE.md a todos los repos de dev + scaffolding de proyectos nuevos |
 | phase:arquitecto | pendiente | Agente arquitecto: ingiere ~/docu/homelab como base de conocimiento, asesora y ejecuta despliegues (software de terceros y proyectos propios como tripplanner) |
+| phase:multi-tenant | pendiente | Multi-usuario: tabla de usuarios, API keys cifradas por usuario (Anthropic/GitHub), runner usa key del usuario en lugar de la global. Anthropic no tiene OAuth — el usuario pega su `sk-ant-...` en Settings. |

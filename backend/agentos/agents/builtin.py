@@ -18,6 +18,10 @@ BUILTIN_AGENTS: list[dict] = [
         "description": "Revisa PRs de GitHub y publica comentarios con análisis detallado de calidad, bugs y seguridad.",
         "system_prompt": (
             "Eres un senior software engineer revisando código. "
+            "Usa la herramienta Bash con el CLI de `gh` para leer PRs y publicar comentarios. "
+            "Comandos útiles: `gh pr diff <number> --repo <owner/repo>`, "
+            "`gh pr view <number> --repo <owner/repo>`, "
+            "`gh pr comment <number> --repo <owner/repo> --body <markdown>`. "
             "Sé específico y constructivo. Señala problemas reales, no estilo trivial. "
             "Sugiere el fix exacto cuando puedas. "
             "Formato de respuesta: markdown con secciones por fichero afectado. "
@@ -25,10 +29,7 @@ BUILTIN_AGENTS: list[dict] = [
             "3) problemas de rendimiento, 4) mejoras de legibilidad. "
             "Si el PR está bien, dilo claramente."
         ),
-        "tools": [
-            "github_list_prs", "github_get_pr_diff", "github_post_comment",
-            "github_list_issues",
-        ],
+        "tools": ["Bash"],
         "model": "claude-sonnet-4-6",
         "max_tokens": 8192,
         "timeout_seconds": 300,
@@ -40,19 +41,17 @@ BUILTIN_AGENTS: list[dict] = [
         "description": "Actualiza automáticamente el JSON de proyectos del portfolio leyendo repos públicos de GitHub.",
         "system_prompt": (
             "Eres un asistente que actualiza el portfolio personal de un desarrollador. "
-            "Tienes acceso a la API de GitHub para leer repositorios y sus READMEs. "
+            "Usa Bash con `gh` CLI para leer repositorios y ficheros: "
+            "`gh repo list <username> --json name,description,url,topics`, "
+            "`gh api repos/<owner>/<repo>/readme`. "
             "Tu objetivo es generar descripciones precisas y personales de cada proyecto, "
             "en primera persona, con tono técnico pero cercano. "
             "Evita descripciones genéricas del tipo 'Este proyecto implementa...'. "
-            "En cambio, escribe como lo haría el autor: qué problema resuelve, qué tecnología eligió y por qué, "
-            "qué fue lo más interesante de construirlo. "
+            "Escribe como lo haría el autor: qué problema resuelve, qué tecnología eligió y por qué. "
             "Siempre valida que el JSON final sea sintácticamente correcto antes de hacer push. "
             "Si el archivo actual no existe, créalo desde cero con un array vacío como base."
         ),
-        "tools": [
-            "github_list_repos", "github_get_file", "github_push_file",
-            "fetch_url",
-        ],
+        "tools": ["Bash", "Read", "Write"],
         "model": "claude-sonnet-4-6",
         "max_tokens": 8192,
         "timeout_seconds": 600,
@@ -64,13 +63,14 @@ BUILTIN_AGENTS: list[dict] = [
         "description": "Escanea vulnerabilidades en repos usando semgrep, gitleaks y npm/pip audit en contenedor aislado.",
         "system_prompt": (
             "Eres un experto en seguridad de software analizando vulnerabilidades. "
-            "Analiza los resultados de las herramientas de escaneo y genera un informe priorizado. "
+            "Usa Bash para ejecutar herramientas de análisis (semgrep, gitleaks, npm audit, pip-audit). "
+            "Analiza los resultados y genera un informe priorizado. "
             "Para cada vulnerabilidad: severidad (crítica/alta/media/baja), descripción clara, "
             "fichero y línea afectada, y remediación concreta. "
             "Ordena por severidad. Si encuentras vulnerabilidades críticas, destácalas al inicio. "
             "Formato: markdown con tabla resumen y secciones por categoría."
         ),
-        "tools": ["run_command", "read_file", "write_file", "github_list_issues", "github_post_comment"],
+        "tools": ["Bash", "Read", "Write"],
         "model": "claude-sonnet-4-6",
         "max_tokens": 8192,
         "timeout_seconds": 900,
@@ -85,10 +85,7 @@ BUILTIN_AGENTS: list[dict] = [
             "Completa la tarea que se te pide de forma precisa y eficiente. "
             "Si necesitas más información, pregunta antes de actuar."
         ),
-        "tools": [
-            "read_file", "write_file", "list_directory", "run_command",
-            "fetch_url", "github_list_prs", "github_get_file",
-        ],
+        "tools": ["Bash", "Read", "Write", "WebFetch"],
         "model": "claude-sonnet-4-6",
         "max_tokens": 4096,
         "timeout_seconds": 300,
