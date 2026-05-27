@@ -173,7 +173,7 @@ export default function RunDetail() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="output" className="mt-3">
+        <TabsContent value="output" className="mt-3" keepMounted>
           {run.output ? (
             <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
               <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/80">
@@ -199,7 +199,7 @@ export default function RunDetail() {
           )}
         </TabsContent>
 
-        <TabsContent value="logs" className="mt-3">
+        <TabsContent value="logs" className="mt-3" keepMounted>
           <LogStream runId={id} isLive={isLive} />
         </TabsContent>
       </Tabs>
