@@ -12,14 +12,16 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: "bg-zinc-700 text-zinc-400",
 };
 
+const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
+
 function fmt(dt: string | null): string {
   if (!dt) return "—";
-  return new Date(dt).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
+  return asUTC(dt).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
 }
 
 function dur(run: Run): string {
   if (!run.started_at || !run.finished_at) return "—";
-  const s = Math.round((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000);
+  const s = Math.round((asUTC(run.finished_at).getTime() - asUTC(run.started_at).getTime()) / 1000);
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${s % 60}s`;
 }
 

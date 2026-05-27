@@ -6,6 +6,8 @@ import { api, Run, Agent, Stats, HealthStatus } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
+
 const STATUS_COLORS: Record<string, string> = {
   pending: "bg-zinc-700 text-zinc-300",
   running: "bg-blue-900 text-blue-300 animate-pulse",
@@ -26,7 +28,7 @@ function RunRow({ run, agents }: { run: Run; agents: Agent[] }) {
   const agent = agents.find((a) => a.id === run.agent_id);
   const duration =
     run.started_at && run.finished_at
-      ? `${Math.round((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000)}s`
+      ? `${Math.round((asUTC(run.finished_at).getTime() - asUTC(run.started_at).getTime()) / 1000)}s`
       : run.started_at
       ? "en curso…"
       : "—";
