@@ -15,8 +15,8 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es" className={`${geistSans.variable} ${geistMono.variable} dark`}>
-      <body className="antialiased bg-zinc-950 text-zinc-100 min-h-screen">
-        <nav className="border-b border-zinc-800 bg-zinc-900/80 backdrop-blur sticky top-0 z-50">
+      <body className="antialiased bg-zinc-950 text-zinc-100 h-dvh overflow-hidden flex flex-col">
+        <nav className="border-b border-zinc-800 bg-zinc-900/80 backdrop-blur shrink-0 z-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 flex h-14 items-center gap-6">
             <Link href="/" className="font-mono font-bold text-violet-400 text-lg tracking-tight">
               AgentOS
@@ -30,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <LogoutButton />
           </div>
         </nav>
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+        <main className="flex-1 min-h-0 overflow-y-auto max-w-7xl w-full mx-auto px-4 sm:px-6 py-8">
           {children}
         </main>
       </body>

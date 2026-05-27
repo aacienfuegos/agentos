@@ -100,7 +100,7 @@ export default function RunDetail() {
 
   return (
     // nav=56px + py-8 top+bottom=64px → contenido ocupa exactamente lo que queda
-    <div className="flex flex-col gap-4 h-[calc(100vh-120px)] w-full">
+    <div className="flex flex-col gap-4 h-full w-full">
       {/* Breadcrumb */}
       <Link href="/runs" className="text-xs text-zinc-500 hover:text-zinc-400 inline-flex items-center gap-1 shrink-0">
         ← Ejecuciones
