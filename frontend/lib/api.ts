@@ -51,6 +51,15 @@ export interface Stats {
   runs_by_agent_this_month: Record<string, number>;
 }
 
+export interface LogEntry {
+  id: number;
+  run_id: string;
+  level: "info" | "tool_use" | "tool_result" | "error" | "done";
+  message: string;
+  extra: Record<string, unknown> | null;
+  created_at: string;
+}
+
 export interface HealthStatus {
   status: "ok" | "degraded";
   version: string;
@@ -90,6 +99,7 @@ export const api = {
     create: (agent_id: string, input_params: Record<string, unknown>) =>
       apiFetch<Run>("/api/runs", { method: "POST", body: JSON.stringify({ agent_id, input_params }) }),
     cancel: (id: string) => apiFetch<void>(`/api/runs/${id}`, { method: "DELETE" }),
+    getLogs: (id: string) => apiFetch<LogEntry[]>(`/api/runs/${id}/logs`),
   },
   schedules: {
     list: () => apiFetch<Schedule[]>("/api/schedules"),

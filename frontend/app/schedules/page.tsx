@@ -23,9 +23,11 @@ function cronHuman(expr: string): string {
   return preset ? preset.label : expr;
 }
 
+const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
+
 function fmtDate(dt: string | null): string {
   if (!dt) return "—";
-  return new Date(dt).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
+  return asUTC(dt).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
 }
 
 export default function SchedulesPage() {
