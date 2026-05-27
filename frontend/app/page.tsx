@@ -36,9 +36,6 @@ function RunRow({ run, agents }: { run: Run; agents: Agent[] }) {
       <StatusBadge status={run.status} />
       <span className="flex-1 text-sm text-zinc-200 truncate">{agent?.name ?? run.agent_id}</span>
       <span className="text-xs text-zinc-500 font-mono">{duration}</span>
-      {run.cost_usd !== null && (
-        <span className="text-xs text-zinc-500 font-mono">${run.cost_usd.toFixed(4)}</span>
-      )}
     </Link>
   );
 }
@@ -136,28 +133,25 @@ export default function Dashboard() {
               <CardTitle className="text-sm font-medium text-zinc-400">Este mes</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-3 gap-4 text-center">
+              <div className="grid grid-cols-2 gap-4 text-center mb-4">
                 <div>
                   <p className="text-2xl font-bold text-zinc-100">{stats.runs_this_month}</p>
                   <p className="text-xs text-zinc-500">ejecuciones</p>
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-zinc-100">
-                    {(stats.tokens_this_month.total / 1000).toFixed(0)}k
-                  </p>
-                  <p className="text-xs text-zinc-500">tokens</p>
-                </div>
-                <div>
-                  <p className={`text-2xl font-bold ${stats.budget_exceeded ? "text-red-400" : "text-green-400"}`}>
-                    ${stats.cost_this_month_usd.toFixed(2)}
-                  </p>
-                  <p className="text-xs text-zinc-500">
-                    de ${stats.monthly_budget_usd} ({stats.budget_used_pct}%)
-                  </p>
+                  <p className="text-2xl font-bold text-zinc-100">{stats.runs_today}</p>
+                  <p className="text-xs text-zinc-500">hoy</p>
                 </div>
               </div>
-              {stats.budget_exceeded && (
-                <p className="mt-3 text-xs text-red-400 text-center">⚠ Budget mensual superado</p>
+              {Object.keys(stats.runs_by_agent_this_month).length > 0 && (
+                <div className="space-y-1">
+                  {Object.entries(stats.runs_by_agent_this_month).map(([agentId, count]) => (
+                    <div key={agentId} className="flex items-center justify-between text-xs">
+                      <span className="text-zinc-400 truncate">{agentId}</span>
+                      <span className="text-zinc-300 font-mono ml-2">{count}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>
