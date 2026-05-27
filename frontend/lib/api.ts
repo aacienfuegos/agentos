@@ -47,12 +47,8 @@ export interface Stats {
   runs_today: number;
   runs_this_month: number;
   active_runs: number;
-  tokens_this_month: { input: number; output: number; total: number };
-  cost_this_month_usd: number;
-  cost_by_agent: Record<string, number>;
-  monthly_budget_usd: number;
-  budget_used_pct: number;
-  budget_exceeded: boolean;
+  status_counts: Record<string, number>;
+  runs_by_agent_this_month: Record<string, number>;
 }
 
 export interface HealthStatus {
@@ -64,9 +60,17 @@ export interface HealthStatus {
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
+    credentials: "include",
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
+  if (res.status === 401) {
+    if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+      window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+    }
+    throw new Error("Unauthorized");
+  }
   if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+  if (res.status === 204) return undefined as unknown as T;
   return res.json();
 }
 

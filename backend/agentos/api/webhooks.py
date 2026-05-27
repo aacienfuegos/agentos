@@ -11,6 +11,7 @@ from sqlmodel import Session
 from ..config import settings
 from ..database import engine
 from ..models import Run
+from ..agents.code_review import was_recently_reviewed, build_review_message
 
 router = APIRouter()
 
@@ -55,10 +56,18 @@ async def github_webhook(request: Request) -> dict[str, Any]:
     pr_number = payload["pull_request"]["number"]
     repo = payload["repository"]["full_name"]
 
+    if was_recently_reviewed(repo, pr_number, within_minutes=60):
+        return {"ok": True, "action": "skipped", "reason": "reviewed in last 60 minutes"}
+
     with Session(engine) as session:
         run = Run(
             agent_id="code-review",
-            input_params={"repo": repo, "pr_number": pr_number, "focus": "all"},
+            input_params={
+                "repo": repo,
+                "pr_number": pr_number,
+                "focus": "all",
+                "user_message": build_review_message(repo, pr_number),
+            },
             triggered_by="webhook",
         )
         session.add(run)

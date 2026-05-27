@@ -1,19 +1,18 @@
 import asyncio
 from datetime import datetime
 
-from arq import ArqRedis
 from arq.connections import RedisSettings
 from sqlmodel import Session
 
 from ..config import settings
 from ..database import engine
-from ..models import Run, RunStatus, LogEntry, AgentDefinition
-from ..runner.anthropic import AnthropicRunner
+from ..models import Run, RunStatus, AgentDefinition
+from ..runner.claude_code import ClaudeCodeRunner
 from ..tools.notifications import send_notification
 
 
 async def run_agent_task(ctx: dict, run_id: str) -> None:
-    with Session(engine) as session:
+    with Session(engine, expire_on_commit=False) as session:
         run = session.get(Run, run_id)
         if not run:
             return
@@ -31,7 +30,11 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
         session.add(run)
         session.commit()
 
-    runner = AnthropicRunner()
+        # Detach before session closes so attributes remain accessible after expiry
+        session.expunge(run)
+        session.expunge(agent)
+
+    runner = ClaudeCodeRunner()
 
     try:
         result = await asyncio.wait_for(
@@ -39,20 +42,21 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
             timeout=agent.timeout_seconds,
         )
 
-        with Session(engine) as session:
+        with Session(engine, expire_on_commit=False) as session:
             run = session.get(Run, run_id)
             run.status = RunStatus.success
             run.output = result.output
             run.tokens_input = result.tokens_input
             run.tokens_output = result.tokens_output
-            run.cost_usd = _calculate_cost(agent.model, result.tokens_input, result.tokens_output)
             run.finished_at = datetime.utcnow()
             session.add(run)
             session.commit()
+            duration = _duration(run)
+            session.expunge(run)
 
         await send_notification(
             title=f"✅ {agent.name} completado",
-            message=f"Duración: {_duration(run)}  |  Coste: ${run.cost_usd:.4f}",
+            message=f"Duración: {duration}",
             priority="default",
         )
 
@@ -85,16 +89,6 @@ def _mark_failed(run_id: str, error: str) -> None:
             run.finished_at = datetime.utcnow()
             session.add(run)
             session.commit()
-
-
-def _calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-    pricing = {
-        "claude-opus-4-7": (15.0, 75.0),
-        "claude-sonnet-4-6": (3.0, 15.0),
-        "claude-haiku-4-5-20251001": (0.25, 1.25),
-    }
-    input_price, output_price = pricing.get(model, (3.0, 15.0))
-    return (input_tokens * input_price + output_tokens * output_price) / 1_000_000
 
 
 def _duration(run: Run) -> str:

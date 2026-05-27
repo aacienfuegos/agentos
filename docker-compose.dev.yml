@@ -12,13 +12,11 @@ services:
     environment:
       - DATABASE_URL=sqlite:////data/agentos.db
       - REDIS_URL=redis://redis:6379
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-dev-secret}
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-prod}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
       - NTFY_URL=${NTFY_URL:-}
-      - MONTHLY_BUDGET_USD=${MONTHLY_BUDGET_USD:-50}
       - ENV=development
     volumes:
       - ./backend/agentos:/app/agentos   # hot reload del código Python
@@ -34,12 +32,15 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        UID: ${UID:-1001}
     restart: unless-stopped
     environment:
       - DATABASE_URL=sqlite:////data/agentos.db
       - REDIS_URL=redis://redis:6379
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-prod}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
       - NTFY_URL=${NTFY_URL:-}
       - ENV=development
     volumes:
@@ -47,10 +48,12 @@ services:
       - backend_data:/data
       - ./agents_config:/app/agents_config
       - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOME}/.claude:/home/worker/.claude
+      - ${HOME}/.claude.json:/home/worker/.claude.json
     depends_on:
       redis:
         condition: service_healthy
-    command: uv run python -m arq agentos.worker.tasks.WorkerSettings
+    command: uv run watchfiles "python -m arq agentos.worker.tasks.WorkerSettings" agentos
 
   redis:
     image: redis:7-alpine
