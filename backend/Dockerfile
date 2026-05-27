@@ -25,7 +25,11 @@ RUN uv sync --frozen --no-dev
 # Copy source
 COPY agentos/ ./agentos/
 
-# Create data directory
-RUN mkdir -p /data /app/agents_config
+# Crear usuario no-root — claude --dangerously-skip-permissions prohíbe root
+RUN useradd -m -u 1001 -G docker worker \
+    && mkdir -p /data /app/agents_config \
+    && chown -R worker:worker /data /app
+
+USER worker
 
 CMD ["uv", "run", "uvicorn", "agentos.main:app", "--host", "0.0.0.0", "--port", "8000"]

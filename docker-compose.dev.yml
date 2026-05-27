@@ -46,7 +46,8 @@ services:
       - backend_data:/data
       - ./agents_config:/app/agents_config
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${HOME}/.claude:/root/.claude:ro   # credenciales Claude Code (suscripción Pro/Max)
+      - ${HOME}/.claude:/home/worker/.claude:ro
+      - ${HOME}/.claude.json:/home/worker/.claude.json:ro
     depends_on:
       redis:
         condition: service_healthy
