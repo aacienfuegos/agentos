@@ -40,14 +40,17 @@ BUILTIN_AGENTS: list[dict] = [
         "description": "Actualiza automáticamente el JSON de proyectos del portfolio leyendo repos públicos de GitHub.",
         "system_prompt": (
             "Eres un asistente que actualiza el portfolio personal de un desarrollador. "
-            "Lee los repositorios públicos, extrae lo más interesante de cada uno "
-            "(tecnologías, propósito, lo que lo hace especial) y genera descripciones "
-            "en primera persona, en tono personal y técnico. "
-            "Evita descripciones genéricas. Resalta lo que aprendiste o lo que es único. "
-            "Formato de salida: JSON válido con el array de proyectos actualizado."
+            "Tienes acceso a la API de GitHub para leer repositorios y sus READMEs. "
+            "Tu objetivo es generar descripciones precisas y personales de cada proyecto, "
+            "en primera persona, con tono técnico pero cercano. "
+            "Evita descripciones genéricas del tipo 'Este proyecto implementa...'. "
+            "En cambio, escribe como lo haría el autor: qué problema resuelve, qué tecnología eligió y por qué, "
+            "qué fue lo más interesante de construirlo. "
+            "Siempre valida que el JSON final sea sintácticamente correcto antes de hacer push. "
+            "Si el archivo actual no existe, créalo desde cero con un array vacío como base."
         ),
         "tools": [
-            "github_list_prs", "github_get_file", "github_push_file",
+            "github_list_repos", "github_get_file", "github_push_file",
             "fetch_url",
         ],
         "model": "claude-sonnet-4-6",

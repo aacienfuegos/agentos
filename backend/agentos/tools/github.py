@@ -92,6 +92,29 @@ async def github_get_file(params: dict) -> str:
     return content[:50_000]
 
 
+async def github_list_repos(params: dict) -> str:
+    username = params["username"]
+    repo_type = params.get("type", "public")
+    sort = params.get("sort", "updated")
+    async with httpx.AsyncClient() as client:
+        r = await client.get(
+            f"{GITHUB_API}/users/{username}/repos",
+            headers=_headers(),
+            params={"type": repo_type, "sort": sort, "per_page": 50},
+        )
+        r.raise_for_status()
+        repos = r.json()
+    lines = []
+    for repo in repos:
+        if repo.get("fork"):
+            continue
+        stars = repo.get("stargazers_count", 0)
+        lang = repo.get("language") or "N/A"
+        desc = repo.get("description") or ""
+        lines.append(f"{repo['name']} [{lang}] ★{stars} — {desc}")
+    return "\n".join(lines) if lines else "No repositories found."
+
+
 async def github_push_file(params: dict) -> str:
     repo = params["repo"]
     path = params["path"]

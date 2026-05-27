@@ -11,6 +11,7 @@ from ..config import settings
 from ..database import engine
 from ..models import Run, AgentDefinition, RunStatus, LogEntry
 from ..tools import TOOL_REGISTRY, get_tool_schemas
+from ..agents.portfolio_updater import build_portfolio_message
 
 
 @dataclass
@@ -35,7 +36,7 @@ class AnthropicRunner:
         await cancel_sub.subscribe(f"run:{run.id}:cancel")
 
         messages: list[dict] = [
-            {"role": "user", "content": self._build_user_message(run.input_params)}
+            {"role": "user", "content": self._build_user_message(run.input_params, agent.id)}
         ]
 
         tools = get_tool_schemas(agent.tools)
@@ -153,7 +154,9 @@ class AnthropicRunner:
                 session.add(entry)
                 session.commit()
 
-    def _build_user_message(self, input_params: dict) -> str:
+    def _build_user_message(self, input_params: dict, agent_id: str = "") -> str:
+        if agent_id == "portfolio-updater":
+            return build_portfolio_message(input_params)
         if "user_message" in input_params:
             return input_params["user_message"]
         return json.dumps(input_params, ensure_ascii=False)
