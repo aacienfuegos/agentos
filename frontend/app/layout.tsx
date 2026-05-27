@@ -17,7 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es" className={`${geistSans.variable} ${geistMono.variable} dark`}>
       <body className="antialiased bg-zinc-950 text-zinc-100 min-h-screen">
         <nav className="border-b border-zinc-800 bg-zinc-900/80 backdrop-blur sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 flex h-14 items-center gap-6">
+          <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 flex h-14 items-center gap-6">
             <Link href="/" className="font-mono font-bold text-violet-400 text-lg tracking-tight">
               AgentOS
             </Link>
