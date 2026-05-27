@@ -113,13 +113,33 @@ Ver `.env.example`. Las críticas:
 
 ## Workflow de desarrollo
 
-1. Crear issue en GitHub con label apropiado
-2. Rama: `feat/<nombre>-issue-<número>` o `fix/<nombre>-issue-<número>`
+### Estrategia de ramas
+
+```
+feat/nombre-N  ──PR──►  develop  ──PR──►  main
+                              │                  │
+                         integración          producción
+                       (validación local)   (deploy manual)
+```
+
+- `develop` es la rama de integración: recibe features, permite validar el conjunto antes de pasar a producción.
+- `main` es la rama de producción: solo recibe merges desde `develop` cuando todo está validado.
+- **Nunca trabajar directo en `develop` ni en `main`**, aunque el cambio sea de docs, config o una línea. Siempre rama → PR a `develop` → PR a `main`.
+
+### Pasos para cada feature
+
+1. Crear issue en GitHub con label apropiado (`feature`/`bug`, categoría)
+2. Crear rama desde `develop`: `feat/<nombre>-issue-<número>` o `fix/<nombre>-issue-<número>`
 3. Implementar con type hints completos
-4. `cd backend && uv run pytest` — pasar tests
-5. `cd frontend && npx tsc --noEmit` — verificar tipos
-6. Commit: `feat(scope): descripción (#número)`
-7. PR referenciando el issue
+4. `cd backend && uv run pytest` — pasar todos los tests sin excepción
+5. `cd frontend && npx tsc --noEmit` — verificar tipos sin excepción
+6. Probar visualmente en `http://localhost:3000`
+7. Commit con prefijo convencional: `feat(scope): descripción (#número)`
+8. PR hacia `develop` con `Closes #N` en el body
+9. Revisar en local con los servicios dev (`docker compose -f docker-compose.dev.yml up -d`). Si está bien, PR de `develop → main`
+10. Merge a `main` → deploy manual en producción
+
+> **Pendiente (backlog):** Configurar GitHub Actions para CI automático (tests + type check en cada PR) y publicación de imagen Docker en ghcr.io al hacer push a `develop` y `main`.
 
 ## Arquitectura de agentes
 
@@ -141,7 +161,7 @@ El `AnthropicRunner` ejecuta el loop agéntico (streaming), publica cada evento 
 
 **Última rama activa:** `feat/portfolio-updater-issue-12`
 
-### PRs abiertas (pendientes de merge en main)
+### PRs abiertas (pendientes de merge en develop)
 
 | PR | Rama | Descripción |
 |----|------|-------------|
