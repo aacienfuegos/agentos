@@ -15,18 +15,12 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://redis:6379"
 
-    # Anthropic
-    anthropic_api_key: str
-
     # GitHub
     github_token: str = ""
     github_webhook_secret: str = ""
 
     # Notifications
     ntfy_url: str = ""
-
-    # Budget
-    monthly_budget_usd: float = 50.0
 
     # Log retention
     log_retention_days: int = 30
