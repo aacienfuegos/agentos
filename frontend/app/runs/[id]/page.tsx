@@ -99,14 +99,15 @@ export default function RunDetail() {
   const totalTokens = (run.tokens_input ?? 0) + (run.tokens_output ?? 0);
 
   return (
-    <div className="max-w-4xl space-y-4">
+    // nav=56px + py-8 top+bottom=64px → contenido ocupa exactamente lo que queda
+    <div className="flex flex-col gap-4 h-[calc(100vh-120px)] max-w-4xl">
       {/* Breadcrumb */}
-      <Link href="/runs" className="text-xs text-zinc-500 hover:text-zinc-400 inline-flex items-center gap-1">
+      <Link href="/runs" className="text-xs text-zinc-500 hover:text-zinc-400 inline-flex items-center gap-1 shrink-0">
         ← Ejecuciones
       </Link>
 
       {/* Header row */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 shrink-0">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-lg font-semibold text-zinc-100 truncate">
@@ -116,8 +117,6 @@ export default function RunDetail() {
               {STATUS_LABELS[run.status] ?? run.status}
             </span>
           </div>
-
-          {/* Inline meta */}
           <div className="flex items-center gap-2 mt-1.5 text-xs text-zinc-500 font-mono flex-wrap">
             <span>{id.slice(0, 8)}</span>
             <MetaDot />
@@ -137,7 +136,6 @@ export default function RunDetail() {
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex items-center gap-2 shrink-0">
           {run.output && (
             <Button variant="outline" size="sm" onClick={exportMarkdown}
@@ -156,27 +154,23 @@ export default function RunDetail() {
 
       {/* Error banner */}
       {run.error && (
-        <div className="bg-red-950 border border-red-900 rounded-lg px-4 py-3">
+        <div className="bg-red-950 border border-red-900 rounded-lg px-4 py-3 shrink-0">
           <p className="text-xs text-red-400 font-mono mb-1">ERROR</p>
           <p className="text-sm text-red-200">{run.error}</p>
         </div>
       )}
 
-      {/* Tabs: Resultado / Logs */}
-      <Tabs defaultValue={run.output ? "output" : "logs"}>
-        <TabsList className="bg-zinc-900 border border-zinc-800">
-          <TabsTrigger value="output" className="text-xs">
-            Resultado
-          </TabsTrigger>
-          <TabsTrigger value="logs" className="text-xs">
-            Logs
-          </TabsTrigger>
+      {/* Tabs — flex-1 para ocupar el espacio restante */}
+      <Tabs defaultValue={run.output ? "output" : "logs"} className="flex-1 min-h-0 gap-0">
+        <TabsList className="bg-zinc-900 border border-zinc-800 shrink-0">
+          <TabsTrigger value="output" className="text-xs">Resultado</TabsTrigger>
+          <TabsTrigger value="logs" className="text-xs">Logs</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="output" className="mt-3" keepMounted>
+        <TabsContent value="output" className="mt-2 min-h-0 overflow-hidden flex flex-col" keepMounted>
           {run.output ? (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/80">
+            <div className="flex flex-col flex-1 min-h-0 bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 shrink-0">
                 <span className="text-xs text-zinc-500 font-mono">
                   {(run.output.length / 1000).toFixed(1)}k chars
                 </span>
@@ -188,7 +182,7 @@ export default function RunDetail() {
                   {copiedOutput ? "Copiado" : "Copiar"}
                 </button>
               </div>
-              <div className="p-5 overflow-y-auto max-h-[calc(100vh-280px)]">
+              <div className="flex-1 min-h-0 overflow-y-auto p-5">
                 <pre className="whitespace-pre-wrap text-sm text-zinc-200 font-mono leading-relaxed">{run.output}</pre>
               </div>
             </div>
@@ -199,7 +193,7 @@ export default function RunDetail() {
           )}
         </TabsContent>
 
-        <TabsContent value="logs" className="mt-3" keepMounted>
+        <TabsContent value="logs" className="mt-2 min-h-0 overflow-hidden flex flex-col" keepMounted>
           <LogStream runId={id} isLive={isLive} />
         </TabsContent>
       </Tabs>

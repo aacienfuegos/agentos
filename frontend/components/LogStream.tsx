@@ -104,8 +104,8 @@ export function LogStream({ runId, isLive }: { runId: string; isLive: boolean })
   };
 
   return (
-    <div className="bg-zinc-950 rounded-lg border border-zinc-800 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/80">
+    <div className="flex flex-col h-full bg-zinc-950 rounded-lg border border-zinc-800 overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/80 shrink-0">
         <div className="flex items-center gap-2 text-xs text-zinc-500">
           <span className="font-mono">{logs.length} eventos</span>
           {connected && isLive && (
@@ -125,7 +125,7 @@ export function LogStream({ runId, isLive }: { runId: string; isLive: boolean })
           </button>
         )}
       </div>
-      <div className="font-mono text-xs p-4 overflow-y-auto max-h-[calc(100vh-280px)] space-y-1">
+      <div className="font-mono text-xs p-4 flex-1 min-h-0 overflow-y-auto space-y-1">
         {logs.length === 0 && (
           <p className="text-zinc-600">
             {isLive ? "Esperando herramientas…" : "El agente respondió sin usar herramientas."}
