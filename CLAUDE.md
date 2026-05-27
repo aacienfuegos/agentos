@@ -148,8 +148,11 @@ Cada agente built-in es una `AgentDefinition` con:
 - `tools`: lista de tools del TOOL_REGISTRY que puede usar
 - `model`: modelo de Claude a usar
 
-El `AnthropicRunner` ejecuta el loop agéntico (streaming), publica cada evento en Redis
-(`run:{id}:logs`), y el endpoint SSE hace subscribe a ese canal para streamear al frontend.
+El `ClaudeCodeRunner` ejecuta el loop agéntico lanzando el CLI `claude` como subproceso con
+`--output-format stream-json --verbose`, publica cada evento en Redis (`run:{id}:logs`),
+y el endpoint SSE hace subscribe a ese canal para streamear al frontend.
+Los eventos `info` (texto del asistente), `tool_use`, `tool_result` y `error` se persisten
+en `log_entries`. Tokens y coste se extraen del evento `result` final.
 
 ## Seguridad
 
@@ -159,15 +162,11 @@ El `AnthropicRunner` ejecuta el loop agéntico (streaming), publica cada evento 
 
 ## Estado actual del desarrollo
 
-**Última rama activa:** `feat/portfolio-updater-issue-12`
+**Última rama activa:** `refactor/claude-code-runner-issue-48` — mergeada a main (2026-05-28)
 
 ### PRs abiertas (pendientes de merge en develop)
 
-| PR | Rama | Descripción |
-|----|------|-------------|
-| #22 | `feat/jwt-auth-middleware-issue-6` | JWT middleware global + página de login |
-| #28 | `feat/code-review-agent-issue-11` | Code review agent — anti-spam y review builder |
-| #29 | `feat/portfolio-updater-issue-12` | Portfolio updater — `github_list_repos` + message builder |
+Ninguna.
 
 ### Fases pendientes del roadmap
 
