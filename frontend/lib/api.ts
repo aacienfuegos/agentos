@@ -47,8 +47,14 @@ export interface Stats {
   runs_today: number;
   runs_this_month: number;
   active_runs: number;
+  scheduled_jobs: number;
   status_counts: Record<string, number>;
   runs_by_agent_this_month: Record<string, number>;
+  tokens_this_month: { input: number; output: number; total: number };
+  cost_this_month_usd: number;
+  cost_by_agent: Record<string, number>;
+  monthly_budget_usd: number;
+  budget_exceeded: boolean;
 }
 
 export interface LogEntry {
