@@ -137,6 +137,24 @@ export default function Dashboard() {
               <span><span className="text-zinc-400">{stats.runs_this_month}</span> este mes</span>
               <span className="text-zinc-800">·</span>
               <span><span className="text-zinc-400">{stats.runs_today}</span> hoy</span>
+              {stats.tokens_this_month.total > 0 && (
+                <>
+                  <span className="text-zinc-800">·</span>
+                  <span><span className="text-zinc-400">{(stats.tokens_this_month.total / 1000).toFixed(0)}k</span> tokens</span>
+                </>
+              )}
+              {stats.cost_this_month_usd > 0 && (
+                <>
+                  <span className="text-zinc-800">·</span>
+                  <span className={stats.budget_exceeded ? "text-red-400" : ""}>
+                    <span className={stats.budget_exceeded ? "text-red-400 font-medium" : "text-zinc-400"}>
+                      ${stats.cost_this_month_usd.toFixed(3)}
+                    </span>
+                    {" "}/ ${stats.monthly_budget_usd}
+                    {stats.budget_exceeded && " ⚠"}
+                  </span>
+                </>
+              )}
             </>
           )}
           {health && (

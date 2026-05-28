@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # Log retention
     log_retention_days: int = 30
 
+    # Budget
+    monthly_budget_usd: float = 50.0
+
     @property
     def is_dev(self) -> bool:
         return self.env == "development"
