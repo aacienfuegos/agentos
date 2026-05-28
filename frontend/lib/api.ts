@@ -150,5 +150,10 @@ export const api = {
         body: markdown,
         headers: { "Content-Type": "text/markdown" },
       }),
+    query: (id: string, userMessage: string) =>
+      apiFetch<{ run_id: string }>(`/api/knowledge-agents/${id}/query`, {
+        method: "POST",
+        body: JSON.stringify({ user_message: userMessage }),
+      }),
   },
 };
