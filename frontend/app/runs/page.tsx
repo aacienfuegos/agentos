@@ -28,7 +28,7 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "cancelado",
 };
 
-const STATUSES = ["running", "success", "failed", "cancelled"];
+const STATUSES: Run["status"][] = ["running", "success", "failed", "cancelled"];
 const PAGE_SIZE = 20;
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
@@ -47,7 +47,7 @@ function dur(run: Run): string {
 export default function RunsList() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<Set<Run["status"]>>(new Set());
   const [agentFilter, setAgentFilter] = useState<string>("");
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -55,13 +55,13 @@ export default function RunsList() {
 
   const agentMap = Object.fromEntries(agents.map((a) => [a.id, a]));
 
-  const fetchRuns = useCallback(async (newPage: number, status: string, agentId: string) => {
+  const fetchRuns = useCallback(async (newPage: number, statuses: Set<Run["status"]>, agentId: string) => {
     setLoading(true);
     try {
       const result = await api.runs.list({
         limit: PAGE_SIZE,
         offset: newPage * PAGE_SIZE,
-        ...(status ? { status } : {}),
+        ...(statuses.size > 0 ? { statuses: [...statuses] } : {}),
         ...(agentId ? { agent_id: agentId } : {}),
       });
       setRuns(result);
@@ -79,6 +79,14 @@ export default function RunsList() {
     setPage(0);
     fetchRuns(0, statusFilter, agentFilter);
   }, [statusFilter, agentFilter, fetchRuns]);
+
+  const toggleStatus = (s: Run["status"]) => {
+    setStatusFilter((prev) => {
+      const next = new Set(prev);
+      next.has(s) ? next.delete(s) : next.add(s);
+      return next;
+    });
+  };
 
   const goToPage = (newPage: number) => {
     setPage(newPage);
@@ -103,22 +111,14 @@ export default function RunsList() {
             ))}
           </select>
 
-          {/* Status filter */}
+          {/* Status filter — pills multi-select, ninguna = todos */}
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setStatusFilter("")}
-              className={`px-2.5 py-1 rounded-md text-xs font-mono transition-colors ${
-                statusFilter === "" ? "bg-white/[0.08] text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
-              }`}
-            >
-              todas
-            </button>
             {STATUSES.map((s) => (
               <button
                 key={s}
-                onClick={() => setStatusFilter(s === statusFilter ? "" : s)}
+                onClick={() => toggleStatus(s)}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono transition-colors ${
-                  statusFilter === s ? "bg-white/[0.08] text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
+                  statusFilter.has(s) ? "bg-white/[0.08] text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
                 }`}
               >
                 <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[s]}`} />
@@ -137,7 +137,7 @@ export default function RunsList() {
               <th className="text-left px-4 py-3 text-[11px] font-mono uppercase tracking-widest text-zinc-600">Estado</th>
               <th className="text-left px-4 py-3 text-[11px] font-mono uppercase tracking-widest text-zinc-600 hidden sm:table-cell">Inicio</th>
               <th className="text-left px-4 py-3 text-[11px] font-mono uppercase tracking-widest text-zinc-600">Dur.</th>
-              <th className="text-left px-4 py-3 text-[11px] font-mono uppercase tracking-widest text-zinc-600 hidden md:table-cell">Coste</th>
+              <th className="text-left px-4 py-3 text-[11px] font-mono uppercase tracking-widest text-zinc-600 hidden md:table-cell">Tokens</th>
               <th className="text-left px-4 py-3 text-[11px] font-mono uppercase tracking-widest text-zinc-600 hidden lg:table-cell">Origen</th>
             </tr>
           </thead>
@@ -183,7 +183,9 @@ export default function RunsList() {
                   </td>
                   <td className="px-4 py-3 text-zinc-600 font-mono text-xs">{dur(run)}</td>
                   <td className="px-4 py-3 text-zinc-600 font-mono text-xs hidden md:table-cell">
-                    {run.cost_usd !== null ? `$${run.cost_usd.toFixed(4)}` : "—"}
+                    {run.tokens_input !== null && run.tokens_output !== null
+                      ? `${((run.tokens_input + run.tokens_output) / 1000).toFixed(1)}k`
+                      : "—"}
                   </td>
                   <td className="px-4 py-3 text-zinc-700 text-xs hidden lg:table-cell">{run.triggered_by}</td>
                 </tr>
