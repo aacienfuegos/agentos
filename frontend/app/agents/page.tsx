@@ -29,20 +29,55 @@ const AGENT_PARAMS: Record<string, Array<{ key: string; label: string; placehold
   ],
 };
 
+const MODELS = [
+  { value: "claude-sonnet-4-6", label: "Sonnet 4.6" },
+  { value: "claude-opus-4-7", label: "Opus 4.7" },
+  { value: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
+];
+
+type EditForm = {
+  name: string;
+  description: string;
+  system_prompt: string;
+  model: string;
+  tools: string;
+  timeout_seconds: string;
+  max_tokens: string;
+};
+
 export default function AgentsPage() {
   const router = useRouter();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selected, setSelected] = useState<Agent | null>(null);
   const [params, setParams] = useState<Record<string, string>>({});
   const [launching, setLaunching] = useState(false);
+  const [editing, setEditing] = useState<Agent | null>(null);
+  const [editForm, setEditForm] = useState<EditForm>({
+    name: "", description: "", system_prompt: "", model: "", tools: "", timeout_seconds: "", max_tokens: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    api.agents.list().then(setAgents);
-  }, []);
+  const load = () => api.agents.list().then(setAgents);
+
+  useEffect(() => { load(); }, []);
 
   const openAgent = (agent: Agent) => {
     setSelected(agent);
     setParams({});
+  };
+
+  const openEdit = (agent: Agent) => {
+    setEditForm({
+      name: agent.name,
+      description: agent.description,
+      system_prompt: agent.system_prompt,
+      model: agent.model,
+      tools: agent.tools.join(", "),
+      timeout_seconds: String(agent.timeout_seconds),
+      max_tokens: String(agent.max_tokens),
+    });
+    setEditing(agent);
   };
 
   const launch = async () => {
@@ -60,6 +95,44 @@ export default function AgentsPage() {
     } catch (e) {
       alert(`Error: ${e}`);
       setLaunching(false);
+    }
+  };
+
+  const saveEdit = async (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    if (!editing) return;
+    setSaving(true);
+    try {
+      await api.agents.update(editing.id, {
+        name: editForm.name,
+        description: editForm.description,
+        system_prompt: editForm.system_prompt,
+        model: editForm.model,
+        tools: editForm.tools.split(",").map((t) => t.trim()).filter(Boolean),
+        timeout_seconds: parseInt(editForm.timeout_seconds) || editing.timeout_seconds,
+        max_tokens: parseInt(editForm.max_tokens) || editing.max_tokens,
+      });
+      setEditing(null);
+      await load();
+    } catch (e) {
+      alert(`Error: ${e}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteAgent = async () => {
+    if (!editing) return;
+    if (!confirm(`¿Eliminar "${editing.name}"? Esta acción no se puede deshacer.`)) return;
+    setDeleting(true);
+    try {
+      await api.agents.delete(editing.id);
+      setEditing(null);
+      await load();
+    } catch (e) {
+      alert(`Error: ${e}`);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -91,18 +164,31 @@ export default function AgentsPage() {
                   {agent.timeout_seconds}s timeout
                 </span>
               </div>
-              <Button
-                className="w-full bg-violet-600 hover:bg-violet-700 text-white"
-                size="sm"
-                onClick={() => openAgent(agent)}
-              >
-                Lanzar
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1 bg-violet-600 hover:bg-violet-700 text-white"
+                  size="sm"
+                  onClick={() => openAgent(agent)}
+                >
+                  Lanzar
+                </Button>
+                {!agent.is_builtin && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+                    onClick={() => openEdit(agent)}
+                  >
+                    Editar
+                  </Button>
+                )}
+              </div>
             </CardContent>
           </Card>
         ))}
       </div>
 
+      {/* Launch dialog */}
       <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
         <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100">
           <DialogHeader>
@@ -129,6 +215,103 @@ export default function AgentsPage() {
               {launching ? "Lanzando…" : "Ejecutar agente"}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit dialog */}
+      <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100 max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar: {editing?.name}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={saveEdit} className="space-y-4 pt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-zinc-400 text-xs">Nombre</Label>
+                <input
+                  value={editForm.name}
+                  onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                  required
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-violet-500"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-zinc-400 text-xs">Modelo</Label>
+                <select
+                  value={editForm.model}
+                  onChange={(e) => setEditForm((f) => ({ ...f, model: e.target.value }))}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:border-violet-500"
+                >
+                  {MODELS.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-zinc-400 text-xs">Descripción</Label>
+              <input
+                value={editForm.description}
+                onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-violet-500"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-zinc-400 text-xs">System prompt</Label>
+              <Textarea
+                value={editForm.system_prompt}
+                onChange={(e) => setEditForm((f) => ({ ...f, system_prompt: e.target.value }))}
+                rows={5}
+                className="bg-zinc-800 border-zinc-700 text-zinc-100 placeholder-zinc-600 resize-none font-mono text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-zinc-400 text-xs">Tools (separadas por coma)</Label>
+              <input
+                value={editForm.tools}
+                onChange={(e) => setEditForm((f) => ({ ...f, tools: e.target.value }))}
+                placeholder="Bash, Read, Write, WebFetch"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-100 font-mono placeholder-zinc-600 focus:outline-none focus:border-violet-500"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-zinc-400 text-xs">Timeout (segundos)</Label>
+                <input
+                  type="number"
+                  value={editForm.timeout_seconds}
+                  onChange={(e) => setEditForm((f) => ({ ...f, timeout_seconds: e.target.value }))}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-violet-500"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-zinc-400 text-xs">Max tokens</Label>
+                <input
+                  type="number"
+                  value={editForm.max_tokens}
+                  onChange={(e) => setEditForm((f) => ({ ...f, max_tokens: e.target.value }))}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-violet-500"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="button"
+                onClick={deleteAgent}
+                disabled={deleting}
+                className="text-xs text-red-500/60 hover:text-red-400 transition-colors disabled:opacity-30"
+              >
+                {deleting ? "eliminando…" : "eliminar agente"}
+              </button>
+              <Button
+                type="submit"
+                disabled={saving}
+                className="bg-violet-600 hover:bg-violet-700"
+              >
+                {saving ? "Guardando…" : "Guardar cambios"}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

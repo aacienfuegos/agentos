@@ -107,6 +107,10 @@ export const api = {
     get: (id: string) => apiFetch<Agent>(`/api/agents/${id}`),
     create: (data: Partial<Agent>) =>
       apiFetch<Agent>("/api/agents", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<Agent>) =>
+      apiFetch<Agent>(`/api/agents/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id: string) =>
+      apiFetch<void>(`/api/agents/${id}`, { method: "DELETE" }),
   },
   runs: {
     list: (params?: { agent_id?: string; statuses?: string[]; limit?: number; offset?: number }) => {

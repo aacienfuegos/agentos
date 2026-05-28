@@ -7,7 +7,7 @@ import { api, KnowledgeAgent, Run } from "@/lib/api";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
 
-type View = "chat" | "document" | "conversations";
+type View = "chat" | "document" | "conversations" | "config";
 
 interface ConversationSummary {
   convId: string;
@@ -49,6 +49,9 @@ export default function KnowledgeAgentDetail() {
   const [sending, setSending] = useState(false);
   const [docEdit, setDocEdit] = useState("");
   const [savingDoc, setSavingDoc] = useState(false);
+  const [configForm, setConfigForm] = useState({ name: "", description: "", model: "", system_prompt: "" });
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const setConversation = (convId: string | null) => {
@@ -64,6 +67,7 @@ export default function KnowledgeAgentDetail() {
     const a = await api.knowledgeAgents.get(id);
     setAgent(a);
     setDocEdit(a.knowledge_doc);
+    setConfigForm({ name: a.name, description: a.description, model: a.model, system_prompt: a.system_prompt });
   };
 
   const loadConversationHistory = async (convId: string) => {
@@ -220,6 +224,29 @@ export default function KnowledgeAgentDetail() {
     a.click();
   };
 
+  const saveConfig = async (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    if (!agent) return;
+    setSavingConfig(true);
+    try {
+      const updated = await api.knowledgeAgents.update(id, configForm);
+      setAgent(updated);
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  const deleteAgent = async () => {
+    if (!confirm(`¿Eliminar "${agent?.name}"? Esta acción no se puede deshacer.`)) return;
+    setDeleting(true);
+    try {
+      await api.knowledgeAgents.delete(id);
+      router.push("/knowledge-agents");
+    } catch {
+      setDeleting(false);
+    }
+  };
+
   if (!agent) return <div className="text-zinc-500 text-sm p-8">Cargando…</div>;
 
   return (
@@ -260,6 +287,14 @@ export default function KnowledgeAgentDetail() {
             }`}
           >
             conversaciones
+          </button>
+          <button
+            onClick={() => setView("config")}
+            className={`px-2.5 py-1 rounded-md text-xs font-mono transition-colors ${
+              view === "config" ? "bg-white/[0.08] text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
+            }`}
+          >
+            config
           </button>
         </div>
       </div>
@@ -432,6 +467,70 @@ export default function KnowledgeAgentDetail() {
             placeholder="# Base de conocimiento\n\nEscribe aquí el documento en Markdown…"
             className="flex-1 min-h-0 bg-zinc-900 border border-white/[0.06] rounded-xl px-4 py-4 text-sm text-zinc-300 font-mono leading-relaxed focus:outline-none focus:border-amber-400/20 resize-none placeholder-zinc-800"
           />
+        </div>
+      )}
+
+      {/* Config view */}
+      {view === "config" && (
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <form onSubmit={saveConfig} className="space-y-5 max-w-lg">
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Nombre</label>
+              <input
+                value={configForm.name}
+                onChange={(e) => setConfigForm((f) => ({ ...f, name: e.target.value }))}
+                required
+                className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Descripción</label>
+              <input
+                value={configForm.description}
+                onChange={(e) => setConfigForm((f) => ({ ...f, description: e.target.value }))}
+                className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Modelo</label>
+              <select
+                value={configForm.model}
+                onChange={(e) => setConfigForm((f) => ({ ...f, model: e.target.value }))}
+                className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:border-amber-400/30"
+              >
+                <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+                <option value="claude-opus-4-7">Opus 4.7</option>
+                <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">System prompt</label>
+              <textarea
+                value={configForm.system_prompt}
+                onChange={(e) => setConfigForm((f) => ({ ...f, system_prompt: e.target.value }))}
+                rows={8}
+                placeholder="Instrucciones adicionales para el agente…"
+                className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2.5 text-sm text-zinc-300 font-mono leading-relaxed placeholder-zinc-800 focus:outline-none focus:border-amber-400/30 resize-none"
+              />
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="button"
+                onClick={deleteAgent}
+                disabled={deleting}
+                className="text-xs font-mono text-red-500/60 hover:text-red-400 transition-colors disabled:opacity-30"
+              >
+                {deleting ? "eliminando···" : "eliminar agente"}
+              </button>
+              <button
+                type="submit"
+                disabled={savingConfig}
+                className="text-xs font-mono text-amber-400 hover:text-amber-300 px-4 py-1.5 border border-amber-400/20 hover:border-amber-400/40 rounded-md transition-all disabled:opacity-40"
+              >
+                {savingConfig ? "guardando···" : "guardar cambios →"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>
