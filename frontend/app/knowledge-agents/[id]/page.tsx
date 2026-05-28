@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { api, KnowledgeAgent, Run } from "@/lib/api";
+import { api, KnowledgeAgent, Run, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
 
@@ -52,6 +52,9 @@ export default function KnowledgeAgentDetail() {
   const [configForm, setConfigForm] = useState({ name: "", description: "", model: "", system_prompt: "" });
   const [savingConfig, setSavingConfig] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [togglingTool, setTogglingTool] = useState<string | null>(null);
+  const [showToolsMenu, setShowToolsMenu] = useState(false);
+  const toolsMenuRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const setConversation = (convId: string | null) => {
@@ -129,6 +132,16 @@ export default function KnowledgeAgentDetail() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (toolsMenuRef.current && !toolsMenuRef.current.contains(e.target as Node)) {
+        setShowToolsMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
   const sendMessage = async () => {
     if (!input.trim() || sending) return;
     const userMsg = input.trim();
@@ -199,6 +212,19 @@ export default function KnowledgeAgentDetail() {
         return updated;
       });
       setSending(false);
+    }
+  };
+
+  const toggleTool = async (name: string) => {
+    if (!agent || togglingTool || name === "Read") return;
+    setTogglingTool(name);
+    try {
+      const current = agent.tools ?? ["Read", "Write"];
+      const next = current.includes(name) ? current.filter((t) => t !== name) : [...current, name];
+      const updated = await api.knowledgeAgents.update(id, { tools: next });
+      setAgent(updated);
+    } finally {
+      setTogglingTool(null);
     }
   };
 
@@ -302,12 +328,74 @@ export default function KnowledgeAgentDetail() {
       {/* Chat view */}
       {view === "chat" && (
         <>
-          {/* Conversation bar */}
-          {(messages.length > 0 || conversationId) && (
-            <div className="shrink-0 flex items-center justify-between px-1">
-              <span className="text-[11px] font-mono text-zinc-700">
-                {conversationId ? `conv ${conversationId.slice(0, 8)}…` : "sin sesión"}
-              </span>
+          {/* Session + tools bar */}
+          <div className="shrink-0 flex items-center justify-between px-1">
+            {/* Tools popover */}
+            <div className="relative" ref={toolsMenuRef}>
+              <button
+                onClick={() => setShowToolsMenu((v) => !v)}
+                className="flex items-center gap-1.5 group"
+              >
+                <span className="text-[11px] font-mono text-zinc-800">tools:</span>
+                <span className="text-[11px] font-mono text-sky-800">Read</span>
+                {(() => {
+                  const extra = (agent.tools ?? []).filter((t) => t !== "Read");
+                  const shown = extra.slice(0, 2);
+                  const rest = extra.length - shown.length;
+                  return (
+                    <>
+                      {shown.map((t) => <span key={t} className="text-[11px] font-mono text-sky-400">{t}</span>)}
+                      {rest > 0 && <span className="text-[11px] font-mono text-zinc-600">+{rest}</span>}
+                    </>
+                  );
+                })()}
+                <span className="text-[11px] font-mono text-zinc-700 group-hover:text-zinc-500 transition-colors">▾</span>
+              </button>
+
+              {showToolsMenu && (
+                <div className="absolute top-full left-0 mt-2 z-50 w-[420px] rounded-xl border border-white/[0.08] bg-zinc-950 shadow-xl p-3 space-y-3">
+                  {KNOWLEDGE_TOOL_GROUPS.map(({ key, label }) => {
+                    const groupTools = KNOWLEDGE_TOOLS.filter((t) => t.group === key);
+                    return (
+                      <div key={key}>
+                        <p className="text-[10px] font-mono uppercase tracking-widest text-zinc-700 mb-1">{label}</p>
+                        <div className="space-y-0.5">
+                          {groupTools.map(({ name, description }) => {
+                            const active = (agent.tools ?? []).includes(name);
+                            const always = name === "Read";
+                            return (
+                              <button
+                                key={name}
+                                onClick={() => toggleTool(name)}
+                                disabled={always || !!togglingTool}
+                                className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-left transition-colors disabled:cursor-default ${
+                                  active ? "hover:bg-sky-400/5" : "hover:bg-white/[0.03]"
+                                }`}
+                              >
+                                <span className={`text-[11px] font-mono w-3 shrink-0 ${active ? "text-sky-400" : "text-zinc-700"}`}>
+                                  {togglingTool === name ? "·" : active ? "✓" : "·"}
+                                </span>
+                                <span className={`text-xs font-mono shrink-0 w-24 ${active ? (always ? "text-sky-800" : "text-sky-400") : "text-zinc-600"}`}>
+                                  {name}
+                                </span>
+                                <span className="text-[11px] text-zinc-700 leading-snug">{description}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              {conversationId && (
+                <span className="text-[11px] font-mono text-zinc-800">
+                  conv {conversationId.slice(0, 8)}…
+                </span>
+              )}
               <button
                 onClick={() => { setMessages([]); setLatestSessionId(null); setConversation(null); }}
                 disabled={sending}
@@ -316,7 +404,7 @@ export default function KnowledgeAgentDetail() {
                 nueva conversación ↺
               </button>
             </div>
-          )}
+          </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] p-4 space-y-4">
             {messages.length === 0 && (

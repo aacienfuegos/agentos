@@ -23,6 +23,7 @@ class KnowledgeAgentCreate(BaseModel):
     system_prompt: str = ""
     knowledge_doc: str = ""
     model: str = "claude-sonnet-4-6"
+    tools: list[str] = ["Read", "Write"]
 
 
 class KnowledgeAgentUpdate(BaseModel):
@@ -31,6 +32,7 @@ class KnowledgeAgentUpdate(BaseModel):
     system_prompt: str | None = None
     knowledge_doc: str | None = None
     model: str | None = None
+    tools: list[str] | None = None
 
 
 @router.get("")

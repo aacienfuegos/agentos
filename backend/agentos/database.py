@@ -12,6 +12,9 @@ engine = create_engine(
 _MIGRATIONS = [
     ("knowledge_agents", "max_tokens", "INTEGER NOT NULL DEFAULT 4096"),
     ("runs", "session_id", "TEXT"),
+    ("knowledge_agents", "web_access", "INTEGER NOT NULL DEFAULT 0"),
+    ("knowledge_agents", "write_access", "INTEGER NOT NULL DEFAULT 1"),
+    ("knowledge_agents", "tools", 'TEXT DEFAULT \'["Read","Write"]\''),
 ]
 
 

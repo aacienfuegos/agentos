@@ -80,9 +80,38 @@ export interface KnowledgeAgent {
   system_prompt: string;
   knowledge_doc: string;
   model: string;
+  tools: string[];
   created_at: string;
   updated_at: string;
 }
+
+export interface KnowledgeTool {
+  name: string;
+  description: string;
+  group: "filesystem" | "web" | "sistema" | "avanzado";
+}
+
+export const KNOWLEDGE_TOOLS: KnowledgeTool[] = [
+  { name: "Read",         description: "Leer ficheros",                               group: "filesystem" },
+  { name: "Write",        description: "Escribir ficheros (actualizar el documento)",  group: "filesystem" },
+  { name: "Edit",         description: "Ediciones quirúrgicas en ficheros",            group: "filesystem" },
+  { name: "Glob",         description: "Buscar ficheros por patrón",                  group: "filesystem" },
+  { name: "Grep",         description: "Buscar texto en ficheros",                    group: "filesystem" },
+  { name: "LS",           description: "Listar directorios",                          group: "filesystem" },
+  { name: "WebFetch",     description: "Descargar URLs concretas",                    group: "web" },
+  { name: "WebSearch",    description: "Buscar en internet",                          group: "web" },
+  { name: "Bash",         description: "Ejecutar comandos shell",                     group: "sistema" },
+  { name: "Task",         description: "Lanzar subagentes",                           group: "avanzado" },
+  { name: "NotebookRead", description: "Leer notebooks Jupyter",                      group: "avanzado" },
+  { name: "NotebookEdit", description: "Editar notebooks Jupyter",                    group: "avanzado" },
+];
+
+export const KNOWLEDGE_TOOL_GROUPS: { key: KnowledgeTool["group"]; label: string }[] = [
+  { key: "filesystem", label: "Filesystem" },
+  { key: "web",        label: "Web" },
+  { key: "sistema",    label: "Sistema" },
+  { key: "avanzado",   label: "Avanzado" },
+];
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
