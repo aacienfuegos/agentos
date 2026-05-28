@@ -28,6 +28,7 @@ class KnowledgeRunResult:
     tokens_input: int = field(default=0)
     tokens_output: int = field(default=0)
     knowledge_doc_updated: bool = field(default=False)
+    session_id: str | None = field(default=None)
 
 
 def _update_path(run_id: str) -> Path:
@@ -62,9 +63,9 @@ class KnowledgeRunner:
         self._redis_url = redis_url or settings.redis_url
 
     async def run(self, run: Run, ka: KnowledgeAgent) -> KnowledgeRunResult:
-        system_prompt = _build_system_prompt(ka, run.id)
+        resume_session_id: str | None = run.input_params.get("resume_session_id")
+        system_prompt = _build_system_prompt(ka, run.id) if not resume_session_id else ""
 
-        # Build an in-memory AgentDefinition that ClaudeCodeRunner can consume
         proxy_agent = AgentDefinition(
             id=f"knowledge:{ka.id}",
             name=ka.name,
@@ -78,7 +79,12 @@ class KnowledgeRunner:
         )
 
         runner = ClaudeCodeRunner(redis_url=self._redis_url)
-        result: RunResult = await runner.run(run, proxy_agent)
+        result: RunResult = await runner.run(
+            run,
+            proxy_agent,
+            persist_session=True,
+            resume_session_id=resume_session_id,
+        )
 
         doc_updated = self._apply_update(ka.id, run.id)
 
@@ -87,6 +93,7 @@ class KnowledgeRunner:
             tokens_input=result.tokens_input,
             tokens_output=result.tokens_output,
             knowledge_doc_updated=doc_updated,
+            session_id=result.session_id,
         )
 
     def _apply_update(self, ka_id: str, run_id: str) -> bool:

@@ -32,6 +32,7 @@ export default function KnowledgeAgentDetail() {
   const [agent, setAgent] = useState<KnowledgeAgent | null>(null);
   const [view, setView] = useState<View>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [docEdit, setDocEdit] = useState("");
@@ -60,7 +61,7 @@ export default function KnowledgeAgentDetail() {
     setMessages((m) => [...m, { role: "assistant", content: "", status: "pending" }]);
 
     try {
-      const { run_id } = await api.knowledgeAgents.query(id, userMsg);
+      const { run_id } = await api.knowledgeAgents.query(id, userMsg, sessionId ?? undefined);
 
       // Poll the run until done
       const poll = async () => {
@@ -77,6 +78,8 @@ export default function KnowledgeAgentDetail() {
           setAgent(updatedAgent);
           setDocEdit(updatedAgent.knowledge_doc);
         }
+
+        if (run.session_id) setSessionId(run.session_id);
 
         setMessages((m) => {
           const updated = [...m];
@@ -172,6 +175,22 @@ export default function KnowledgeAgentDetail() {
       {/* Chat view */}
       {view === "chat" && (
         <>
+          {/* Session bar */}
+          {messages.length > 0 && (
+            <div className="shrink-0 flex items-center justify-between px-1">
+              <span className="text-[11px] font-mono text-zinc-700">
+                {sessionId ? `sesión ${sessionId.slice(0, 8)}…` : "sin sesión"}
+              </span>
+              <button
+                onClick={() => { setMessages([]); setSessionId(null); }}
+                disabled={sending}
+                className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors disabled:opacity-30"
+              >
+                nueva conversación ↺
+              </button>
+            </div>
+          )}
+
           <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] p-4 space-y-4">
             {messages.length === 0 && (
               <div className="flex items-center justify-center h-full">

@@ -11,6 +11,7 @@ engine = create_engine(
 
 _MIGRATIONS = [
     ("knowledge_agents", "max_tokens", "INTEGER NOT NULL DEFAULT 4096"),
+    ("runs", "session_id", "TEXT"),
 ]
 
 
