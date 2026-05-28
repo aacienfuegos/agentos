@@ -3,17 +3,34 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { api, Run, Agent } from "@/lib/api";
+import { api, Agent } from "@/lib/api";
+import type { Run } from "@/lib/api";
 import { LogStream } from "@/components/LogStream";
-import { Button } from "@/components/ui/button";
-import { Copy, Check } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Copy, Check, Download } from "lucide-react";
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: "bg-zinc-700 text-zinc-300",
-  running: "bg-blue-900 text-blue-300",
-  success: "bg-green-900 text-green-300",
-  failed: "bg-red-900 text-red-300",
-  cancelled: "bg-zinc-700 text-zinc-400",
+const STATUS_DOT: Record<string, string> = {
+  pending:   "bg-zinc-500",
+  running:   "bg-sky-400 animate-pulse",
+  success:   "bg-emerald-500",
+  failed:    "bg-red-500",
+  cancelled: "bg-zinc-700",
+};
+
+const STATUS_TEXT: Record<string, string> = {
+  pending:   "text-zinc-500",
+  running:   "text-sky-400",
+  success:   "text-emerald-400",
+  failed:    "text-red-400",
+  cancelled: "text-zinc-600",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  pending:   "pendiente",
+  running:   "ejecutando",
+  success:   "ok",
+  failed:    "error",
+  cancelled: "cancelado",
 };
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
@@ -24,6 +41,10 @@ function duration(run: Run): string {
   const secs = Math.round((end.getTime() - asUTC(run.started_at).getTime()) / 1000);
   if (secs < 60) return `${secs}s`;
   return `${Math.floor(secs / 60)}m ${secs % 60}s`;
+}
+
+function MetaDot() {
+  return <span className="text-zinc-700">·</span>;
 }
 
 export default function RunDetail() {
@@ -42,7 +63,6 @@ export default function RunDetail() {
     };
     load();
 
-    // Poll for status updates if run is active
     const interval = setInterval(async () => {
       const r = await api.runs.get(id);
       setRun(r);
@@ -80,93 +100,118 @@ export default function RunDetail() {
     a.click();
   };
 
-  if (!run) return <div className="text-zinc-500 text-sm">Cargando…</div>;
+  if (!run) return <div className="text-zinc-500 text-sm p-8">Cargando…</div>;
 
   const isLive = run.status === "running" || run.status === "pending";
   const totalTokens = (run.tokens_input ?? 0) + (run.tokens_output ?? 0);
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Link href="/runs" className="text-xs text-zinc-500 hover:text-zinc-400">← Ejecuciones</Link>
+    // nav=56px + py-8 top+bottom=64px → contenido ocupa exactamente lo que queda
+    <div className="flex flex-col gap-4 h-[calc(100dvh-120px)] w-full">
+      {/* Breadcrumb */}
+      <Link href="/runs" className="text-xs text-zinc-500 hover:text-zinc-400 inline-flex items-center gap-1 shrink-0">
+        ← Ejecuciones
+      </Link>
+
+      {/* Header row */}
+      <div className="flex items-start justify-between gap-4 shrink-0">
+        <div className="min-w-0">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-base font-mono font-semibold text-zinc-200 tracking-tight truncate">
+              {agent?.name ?? run.agent_id}
+            </h1>
+            <span className="flex items-center gap-1.5 shrink-0">
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[run.status]}`} />
+              <span className={`text-xs font-mono ${STATUS_TEXT[run.status]}`}>
+                {STATUS_LABELS[run.status] ?? run.status}
+              </span>
+            </span>
           </div>
-          <h1 className="text-xl font-semibold text-zinc-100">
-            {agent?.name ?? run.agent_id}
-          </h1>
-          <p className="text-sm text-zinc-500 font-mono mt-1">{run.id}</p>
+          <div className="flex items-center gap-2 mt-1.5 text-xs text-zinc-500 font-mono flex-wrap">
+            <span>{id.slice(0, 8)}</span>
+            <MetaDot />
+            <span>{duration(run)}</span>
+            {totalTokens > 0 && (
+              <>
+                <MetaDot />
+                <span>{(totalTokens / 1000).toFixed(1)}k tokens</span>
+              </>
+            )}
+            {run.cost_usd !== null && (
+              <>
+                <MetaDot />
+                <span>${run.cost_usd.toFixed(4)}</span>
+              </>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-2 shrink-0">
           {run.output && (
-            <Button variant="outline" size="sm" onClick={exportMarkdown}
-              className="border-zinc-700 hover:bg-zinc-800">
-              Exportar .md
-            </Button>
+            <button onClick={exportMarkdown}
+              className="flex items-center gap-1.5 text-xs font-mono text-zinc-600 hover:text-zinc-300 transition-colors px-2.5 py-1 rounded-md hover:bg-white/5">
+              <Download className="w-3 h-3" />
+              .md
+            </button>
           )}
           {isLive && (
-            <Button variant="destructive" size="sm" onClick={handleCancel} disabled={cancelling}>
-              {cancelling ? "Cancelando…" : "Cancelar"}
-            </Button>
+            <button onClick={handleCancel} disabled={cancelling}
+              className="text-xs font-mono text-red-500 hover:text-red-400 px-2.5 py-1 rounded-md hover:bg-red-500/10 transition-colors disabled:opacity-50">
+              {cancelling ? "cancelando···" : "cancelar"}
+            </button>
           )}
         </div>
       </div>
 
-      {/* Meta */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3">
-          <p className="text-xs text-zinc-500 mb-1">Estado</p>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[run.status]}`}>
-            {run.status}
-          </span>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3">
-          <p className="text-xs text-zinc-500 mb-1">Duración</p>
-          <p className="text-sm font-mono text-zinc-200">{duration(run)}</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3">
-          <p className="text-xs text-zinc-500 mb-1">Tokens</p>
-          <p className="text-sm font-mono text-zinc-200">{totalTokens > 0 ? `${(totalTokens / 1000).toFixed(1)}k` : "—"}</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3">
-          <p className="text-xs text-zinc-500 mb-1">Coste</p>
-          <p className="text-sm font-mono text-zinc-200">
-            {run.cost_usd !== null ? `$${run.cost_usd.toFixed(4)}` : "—"}
-          </p>
-        </div>
-      </div>
-
-      {/* Logs */}
-      <LogStream runId={id} isLive={isLive} />
-
-      {/* Output */}
-      {run.output && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg">
-          <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800">
-            <span className="text-xs text-zinc-400 font-mono">Resultado</span>
-            <button
-              onClick={copyOutput}
-              className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-              title="Copiar resultado"
-            >
-              {copiedOutput ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-              {copiedOutput ? "Copiado" : "Copiar"}
-            </button>
-          </div>
-          <div className="p-4 prose prose-invert prose-sm max-w-none">
-            <pre className="whitespace-pre-wrap text-sm text-zinc-200 font-mono">{run.output}</pre>
-          </div>
-        </div>
-      )}
-
-      {/* Error */}
+      {/* Error banner */}
       {run.error && (
-        <div className="bg-red-950 border border-red-900 rounded-lg p-4">
-          <p className="text-xs text-red-400 font-mono mb-1">ERROR</p>
-          <p className="text-sm text-red-200">{run.error}</p>
+        <div className="rounded-xl border border-red-500/20 bg-red-500/[0.05] px-4 py-3 shrink-0">
+          <p className="text-[11px] font-mono uppercase tracking-widest text-red-500/60 mb-1">error</p>
+          <p className="text-sm font-mono text-red-300">{run.error}</p>
         </div>
       )}
+
+      {/* Tabs — flex-1 para ocupar el espacio restante */}
+      <Tabs defaultValue={run.output ? "output" : "logs"} className="flex-1 min-h-0 gap-0">
+        <TabsList className="bg-transparent border-0 shrink-0 p-0 gap-1">
+          <TabsTrigger value="output" className="text-xs font-mono px-3 py-1.5 rounded-md data-active:bg-white/[0.06] data-active:text-zinc-100 text-zinc-500 hover:text-zinc-300">
+            resultado
+          </TabsTrigger>
+          <TabsTrigger value="logs" className="text-xs font-mono px-3 py-1.5 rounded-md data-active:bg-white/[0.06] data-active:text-zinc-100 text-zinc-500 hover:text-zinc-300">
+            logs
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="output" className="mt-2 min-h-0 overflow-hidden flex flex-col" keepMounted>
+          {run.output ? (
+            <div className="flex flex-col flex-1 min-h-0 rounded-xl border border-white/[0.06] overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.04] shrink-0">
+                <span className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">
+                  {(run.output.length / 1000).toFixed(1)}k chars
+                </span>
+                <button
+                  onClick={copyOutput}
+                  className="flex items-center gap-1.5 text-xs font-mono text-zinc-600 hover:text-zinc-300 transition-colors"
+                >
+                  {copiedOutput ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  {copiedOutput ? "copiado" : "copiar"}
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-5">
+                <pre className="whitespace-pre-wrap text-sm text-zinc-300 font-mono leading-relaxed">{run.output}</pre>
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs font-mono text-zinc-700 py-8 text-center">
+              {isLive ? "ejecutando···" : "— sin resultado —"}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="logs" className="mt-2 min-h-0 overflow-hidden flex flex-col" keepMounted>
+          <LogStream runId={id} isLive={isLive} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

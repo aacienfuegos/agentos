@@ -10,7 +10,7 @@ interface LogEvent {
   metadata?: Record<string, unknown> | null;
 }
 
-// Only execution trace events — text output lives in the Resultado block
+// Only execution trace events — text output lives in the Resultado tab
 const DISPLAY_LEVELS = new Set(["tool_use", "tool_result", "error"]);
 
 const LEVEL_STYLES: Record<string, string> = {
@@ -36,7 +36,7 @@ export function LogStream({ runId, isLive }: { runId: string; isLive: boolean })
   const bottomRef = useRef<HTMLDivElement>(null);
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
 
-  // Finished runs: fetch from REST (no SSE race conditions)
+  // Finished runs: fetch from REST
   useEffect(() => {
     if (isLive) return;
     api.runs.getLogs(runId).then((entries) => {
@@ -74,7 +74,6 @@ export function LogStream({ runId, isLive }: { runId: string; isLive: boolean })
     es.onerror = () => {
       setConnected(false);
       es.close();
-      // Fallback: fetch whatever is persisted so far
       api.runs.getLogs(runId).then((entries) => {
         const filtered = entries.map(entryToEvent).filter((e) => DISPLAY_LEVELS.has(e.level));
         if (filtered.length > 0) setLogs(filtered);
@@ -85,8 +84,8 @@ export function LogStream({ runId, isLive }: { runId: string; isLive: boolean })
   }, [runId, isLive, backendUrl]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
+    if (isLive) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs, isLive]);
 
   const copyLogs = () => {
     const text = logs
@@ -105,12 +104,12 @@ export function LogStream({ runId, isLive }: { runId: string; isLive: boolean })
   };
 
   return (
-    <div className="bg-zinc-950 rounded-lg border border-zinc-800 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-zinc-400 font-mono">Logs</span>
+    <div className="flex flex-col h-full rounded-xl border border-white/[0.06] overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.04] shrink-0">
+        <div className="flex items-center gap-2 text-xs font-mono text-zinc-600">
+          <span className="font-mono">{logs.length} eventos</span>
           {connected && isLive && (
-            <span className="flex items-center gap-1 text-xs text-green-400">
+            <span className="flex items-center gap-1 text-green-400">
               <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
               en vivo
             </span>
@@ -119,15 +118,14 @@ export function LogStream({ runId, isLive }: { runId: string; isLive: boolean })
         {logs.length > 0 && (
           <button
             onClick={copyLogs}
-            className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-            title="Copiar logs"
+            className="flex items-center gap-1.5 text-xs font-mono text-zinc-600 hover:text-zinc-300 transition-colors"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
             {copied ? "Copiado" : "Copiar"}
           </button>
         )}
       </div>
-      <div className="font-mono text-xs p-4 max-h-[500px] overflow-y-auto space-y-1">
+      <div className="font-mono text-xs p-4 flex-1 min-h-0 overflow-y-auto space-y-1">
         {logs.length === 0 && (
           <p className="text-zinc-600">
             {isLive ? "Esperando herramientas…" : "El agente respondió sin usar herramientas."}
