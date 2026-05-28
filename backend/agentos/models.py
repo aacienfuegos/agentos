@@ -75,6 +75,7 @@ class KnowledgeAgent(SQLModel, table=True):
     knowledge_doc: str = ""  # Markdown — source of truth in SQLite
     model: str = "claude-sonnet-4-6"
     max_tokens: int = 4096
+    tools: list[str] = Field(default_factory=lambda: ["Read", "Write"], sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

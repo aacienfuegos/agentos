@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, KnowledgeAgent } from "@/lib/api";
+import { api, KnowledgeAgent, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
 
 const MODELS = [
   { value: "claude-sonnet-4-6", label: "Sonnet 4.6" },
@@ -10,10 +10,12 @@ const MODELS = [
   { value: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
 ];
 
+const DEFAULT_TOOLS = ["Read", "Write"];
+
 export default function KnowledgeAgentsList() {
   const [agents, setAgents] = useState<KnowledgeAgent[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ id: "", name: "", description: "", model: "claude-sonnet-4-6" });
+  const [form, setForm] = useState({ id: "", name: "", description: "", model: "claude-sonnet-4-6", tools: DEFAULT_TOOLS });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
@@ -29,13 +31,21 @@ export default function KnowledgeAgentsList() {
     try {
       await api.knowledgeAgents.create(form);
       setShowForm(false);
-      setForm({ id: "", name: "", description: "", model: "claude-sonnet-4-6" });
+      setForm({ id: "", name: "", description: "", model: "claude-sonnet-4-6", tools: DEFAULT_TOOLS });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al crear agente");
     } finally {
       setCreating(false);
     }
+  };
+
+  const toggleTool = (name: string) => {
+    if (name === "Read") return;
+    setForm((f) => ({
+      ...f,
+      tools: f.tools.includes(name) ? f.tools.filter((t) => t !== name) : [...f.tools, name],
+    }));
   };
 
   const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
@@ -100,6 +110,46 @@ export default function KnowledgeAgentsList() {
               ))}
             </select>
           </div>
+          <div className="space-y-3">
+            <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Tools</label>
+            {KNOWLEDGE_TOOL_GROUPS.map(({ key, label }) => {
+              const groupTools = KNOWLEDGE_TOOLS.filter((t) => t.group === key);
+              return (
+                <div key={key}>
+                  <p className="text-[11px] font-mono uppercase tracking-widest text-zinc-700 mb-1.5">{label}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                    {groupTools.map(({ name, description }) => {
+                      const active = form.tools.includes(name);
+                      const always = name === "Read";
+                      return (
+                        <button
+                          key={name}
+                          type="button"
+                          onClick={() => toggleTool(name)}
+                          disabled={always}
+                          className={`flex items-start gap-3 px-3 py-2 rounded-lg border text-left transition-colors ${
+                            active
+                              ? "border-sky-400/20 bg-sky-400/5"
+                              : "border-white/[0.04] hover:border-white/[0.08]"
+                          } disabled:cursor-default`}
+                        >
+                          <span className={`text-xs font-mono mt-0.5 shrink-0 w-4 ${active ? "text-sky-400" : "text-zinc-700"}`}>
+                            {active ? "✓" : "·"}
+                          </span>
+                          <div>
+                            <span className={`text-xs font-mono ${active ? (always ? "text-sky-800" : "text-sky-400") : "text-zinc-600"}`}>
+                              {name}
+                            </span>
+                            <p className="text-[11px] text-zinc-700 mt-0.5 leading-snug">{description}</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
           {error && <p className="text-sm text-red-400 font-mono">{error}</p>}
           <div className="flex justify-end">
             <button
@@ -139,6 +189,21 @@ export default function KnowledgeAgentsList() {
               <div className="flex items-center justify-between text-[11px] font-mono text-zinc-700">
                 <span>{agent.model.split("-").slice(-2).join("-")}</span>
                 <span>{agent.knowledge_doc ? `${(agent.knowledge_doc.length / 1000).toFixed(1)}k chars` : "sin doc"}</span>
+              </div>
+              <div className="flex items-center gap-1.5 mt-2">
+                {(() => {
+                  const tools = agent.tools ?? DEFAULT_TOOLS;
+                  const shown = tools.slice(0, 3);
+                  const rest = tools.length - shown.length;
+                  return (
+                    <>
+                      {shown.map((t) => (
+                        <span key={t} className={`text-[11px] font-mono ${t === "Read" ? "text-sky-800" : "text-sky-400"}`}>{t}</span>
+                      ))}
+                      {rest > 0 && <span className="text-[11px] font-mono text-zinc-600">+{rest}</span>}
+                    </>
+                  );
+                })()}
               </div>
               <div className="mt-2 text-[11px] font-mono text-zinc-800">
                 actualizado {asUTC(agent.updated_at).toLocaleDateString("es-ES")}
