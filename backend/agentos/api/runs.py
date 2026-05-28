@@ -27,7 +27,7 @@ def _redis_settings() -> RedisSettings:
 def list_runs(
     session: SessionDep,
     agent_id: str | None = None,
-    status: RunStatus | None = None,
+    status: list[RunStatus] = Query(default=[]),
     limit: int = Query(default=50, le=200),
     offset: int = 0,
 ) -> list[Run]:
@@ -35,7 +35,7 @@ def list_runs(
     if agent_id:
         query = query.where(Run.agent_id == agent_id)
     if status:
-        query = query.where(Run.status == status)
+        query = query.where(Run.status.in_(status))
     return session.exec(query).all()
 
 

@@ -108,10 +108,13 @@ export const api = {
       apiFetch<Agent>("/api/agents", { method: "POST", body: JSON.stringify(data) }),
   },
   runs: {
-    list: (params?: { agent_id?: string; status?: string; limit?: number; offset?: number }) => {
-      const qs = new URLSearchParams(
-        Object.fromEntries(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))
-      ).toString();
+    list: (params?: { agent_id?: string; statuses?: string[]; limit?: number; offset?: number }) => {
+      const p = new URLSearchParams();
+      if (params?.agent_id) p.set("agent_id", params.agent_id);
+      if (params?.limit !== undefined) p.set("limit", String(params.limit));
+      if (params?.offset !== undefined) p.set("offset", String(params.offset));
+      for (const s of params?.statuses ?? []) p.append("status", s);
+      const qs = p.toString();
       return apiFetch<Run[]>(`/api/runs${qs ? `?${qs}` : ""}`);
     },
     get: (id: string) => apiFetch<Run>(`/api/runs/${id}`),
