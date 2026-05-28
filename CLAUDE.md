@@ -162,21 +162,33 @@ en `log_entries`. Tokens y coste se extraen del evento `result` final.
 
 ## Estado actual del desarrollo
 
-**Última rama activa:** `feat/polish-logs-copy-timezone-issue-52` — mergeada a main (2026-05-28)
+**Última sesión activa:** 2026-05-28 — polish completo + phase:knowledge-1 completa en develop
 
 ### PRs abiertas (pendientes de merge en develop)
 
-Ninguna.
+Ninguna (todo mergeado a develop).
+
+### Issues ya implementados (código existe, cerrar cuando se valide en producción)
+
+- #14 APScheduler, #15 CRUD schedules, #16 Frontend schedules, #17 webhook GitHub — en producción
+- #19 ntfy notifications, #24 health indicator dashboard, #25 log retention, #26 redirect 401 — en producción
+- #18 stats tokens/coste (#57 mergeado), #21 filtros y paginación (#58), #23 tests YAML loader (#59) — en develop
+- #30 KnowledgeAgent model + CRUD (#60), #31 KnowledgeRunner (#61), #32 Knowledge UI (#62) — en develop
 
 ### Fases pendientes del roadmap
 
 | Fase | Issues | Descripción |
 |------|--------|-------------|
-| phase:polish | #18, #19, #20, #21, #26 | Stats de uso, ntfy, Caddy+Tailscale, export markdown, redirect 401 |
-| phase:knowledge-1 | #30, #31, #32 | KnowledgeAgent: modelo DB, runner con contexto destilado, UI |
+| phase:polish | #20 | Caddy + Tailscale para acceso seguro en producción |
 | phase:knowledge-2 | #33, #34, #35, #36 | Knowledge Agent: system prompt auto-generado, automatizaciones |
 | phase:multimodel-1 | #37–#42 | Runners OpenAI/Gemini, config multi-modelo, credenciales por proveedor |
 | phase:multimodel-2 | #43, #44, #45 | Consultas cruzadas entre modelos, modo paralelo, UI comparativa |
 | phase:scrum-master | pendiente | Agente scrum master: propaga cambios de workflow/CLAUDE.md a todos los repos de dev + scaffolding de proyectos nuevos |
 | phase:arquitecto | pendiente | Agente arquitecto: ingiere ~/docu/homelab como base de conocimiento, asesora y ejecuta despliegues (software de terceros y proyectos propios como tripplanner) |
 | phase:multi-tenant | pendiente | Multi-usuario: tabla de usuarios, API keys cifradas por usuario (Anthropic/GitHub), runner usa key del usuario en lugar de la global. Anthropic no tiene OAuth — el usuario pega su `sk-ant-...` en Settings. |
+
+### Notas de arquitectura añadidas en esta sesión
+
+- `KnowledgeRunner` usa el SDK `anthropic` directamente (no el CLI). Runs de knowledge agents tienen `agent_id = "knowledge:{id}"` — SQLite no fuerza FK por defecto, así que funciona sin cambiar el modelo `Run`.
+- `ANTHROPIC_API_KEY` ahora también en `config.py` (antes solo se pasaba como env var al CLI).
+- `api.knowledgeAgents` en `frontend/lib/api.ts` cubre todo el CRUD + export/import + query.
