@@ -97,8 +97,10 @@ export const api = {
       apiFetch<Agent>("/api/agents", { method: "POST", body: JSON.stringify(data) }),
   },
   runs: {
-    list: (params?: { agent_id?: string; status?: string; limit?: number }) => {
-      const qs = new URLSearchParams(params as Record<string, string>).toString();
+    list: (params?: { agent_id?: string; status?: string; limit?: number; offset?: number }) => {
+      const qs = new URLSearchParams(
+        Object.fromEntries(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))
+      ).toString();
       return apiFetch<Run[]>(`/api/runs${qs ? `?${qs}` : ""}`);
     },
     get: (id: string) => apiFetch<Run>(`/api/runs/${id}`),

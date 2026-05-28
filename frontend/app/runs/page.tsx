@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { api, Run, Agent } from "@/lib/api";
 
@@ -28,6 +28,9 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "cancelado",
 };
 
+const STATUSES = ["running", "success", "failed", "cancelled"];
+const PAGE_SIZE = 20;
+
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
 
 function fmt(dt: string | null): string {
@@ -41,48 +44,88 @@ function dur(run: Run): string {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${s % 60}s`;
 }
 
-const STATUSES = ["running", "success", "failed", "cancelled"];
-
 export default function RunsList() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("");
-
-  useEffect(() => {
-    Promise.all([api.runs.list({ limit: 100 }), api.agents.list()]).then(([r, a]) => {
-      setRuns(r);
-      setAgents(a);
-    });
-  }, []);
+  const [agentFilter, setAgentFilter] = useState<string>("");
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const agentMap = Object.fromEntries(agents.map((a) => [a.id, a]));
-  const filtered = statusFilter ? runs.filter((r) => r.status === statusFilter) : runs;
+
+  const fetchRuns = useCallback(async (newPage: number, status: string, agentId: string) => {
+    setLoading(true);
+    try {
+      const result = await api.runs.list({
+        limit: PAGE_SIZE,
+        offset: newPage * PAGE_SIZE,
+        ...(status ? { status } : {}),
+        ...(agentId ? { agent_id: agentId } : {}),
+      });
+      setRuns(result);
+      setHasMore(result.length === PAGE_SIZE);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    api.agents.list().then(setAgents);
+  }, []);
+
+  useEffect(() => {
+    setPage(0);
+    fetchRuns(0, statusFilter, agentFilter);
+  }, [statusFilter, agentFilter, fetchRuns]);
+
+  const goToPage = (newPage: number) => {
+    setPage(newPage);
+    fetchRuns(newPage, statusFilter, agentFilter);
+  };
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-base font-mono font-semibold text-zinc-200 tracking-tight">Ejecuciones</h1>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setStatusFilter("")}
-            className={`px-2.5 py-1 rounded-md text-xs font-mono transition-colors ${
-              statusFilter === "" ? "bg-white/[0.08] text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
-            }`}
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Agent filter */}
+          <select
+            value={agentFilter}
+            onChange={(e) => setAgentFilter(e.target.value)}
+            className="bg-zinc-900 border border-white/[0.06] rounded-md text-xs font-mono text-zinc-400 px-2.5 py-1 focus:outline-none focus:border-amber-400/30 transition-colors"
           >
-            todas
-          </button>
-          {STATUSES.map((s) => (
+            <option value="">todos los agentes</option>
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+
+          {/* Status filter */}
+          <div className="flex items-center gap-1">
             <button
-              key={s}
-              onClick={() => setStatusFilter(s === statusFilter ? "" : s)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono transition-colors ${
-                statusFilter === s ? "bg-white/[0.08] text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
+              onClick={() => setStatusFilter("")}
+              className={`px-2.5 py-1 rounded-md text-xs font-mono transition-colors ${
+                statusFilter === "" ? "bg-white/[0.08] text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
               }`}
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[s]}`} />
-              {STATUS_LABEL[s]}
+              todas
             </button>
-          ))}
+            {STATUSES.map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s === statusFilter ? "" : s)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono transition-colors ${
+                  statusFilter === s ? "bg-white/[0.08] text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[s]}`} />
+                {STATUS_LABEL[s]}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -99,48 +142,77 @@ export default function RunsList() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((run, i) => (
-              <tr
-                key={run.id}
-                className={`border-b border-white/[0.03] hover:bg-white/[0.03] transition-colors ${
-                  i === filtered.length - 1 ? "border-b-0" : ""
-                }`}
-              >
-                <td className="px-4 py-3">
-                  <Link
-                    href={`/runs/${run.id}`}
-                    className="text-zinc-300 hover:text-amber-400 transition-colors font-medium"
-                  >
-                    {agentMap[run.agent_id]?.name ?? run.agent_id}
-                  </Link>
+            {loading && runs.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-10 text-center text-xs font-mono text-zinc-700">
+                  cargando…
                 </td>
-                <td className="px-4 py-3">
-                  <span className="flex items-center gap-1.5">
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[run.status]}`} />
-                    <span className={`text-xs font-mono ${STATUS_TEXT[run.status]}`}>
-                      {STATUS_LABEL[run.status] ?? run.status}
-                    </span>
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-zinc-600 font-mono text-xs hidden sm:table-cell">
-                  {fmt(run.started_at ?? run.created_at)}
-                </td>
-                <td className="px-4 py-3 text-zinc-600 font-mono text-xs">{dur(run)}</td>
-                <td className="px-4 py-3 text-zinc-600 font-mono text-xs hidden md:table-cell">
-                  {run.cost_usd !== null ? `$${run.cost_usd.toFixed(4)}` : "—"}
-                </td>
-                <td className="px-4 py-3 text-zinc-700 text-xs hidden lg:table-cell">{run.triggered_by}</td>
               </tr>
-            ))}
-            {filtered.length === 0 && (
+            ) : runs.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-10 text-center text-xs font-mono text-zinc-700">
                   — sin ejecuciones —
                 </td>
               </tr>
+            ) : (
+              runs.map((run, i) => (
+                <tr
+                  key={run.id}
+                  className={`border-b border-white/[0.03] hover:bg-white/[0.03] transition-colors ${
+                    i === runs.length - 1 ? "border-b-0" : ""
+                  }`}
+                >
+                  <td className="px-4 py-3">
+                    <Link
+                      href={`/runs/${run.id}`}
+                      className="text-zinc-300 hover:text-amber-400 transition-colors font-medium"
+                    >
+                      {agentMap[run.agent_id]?.name ?? run.agent_id}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="flex items-center gap-1.5">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[run.status]}`} />
+                      <span className={`text-xs font-mono ${STATUS_TEXT[run.status]}`}>
+                        {STATUS_LABEL[run.status] ?? run.status}
+                      </span>
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-zinc-600 font-mono text-xs hidden sm:table-cell">
+                    {fmt(run.started_at ?? run.created_at)}
+                  </td>
+                  <td className="px-4 py-3 text-zinc-600 font-mono text-xs">{dur(run)}</td>
+                  <td className="px-4 py-3 text-zinc-600 font-mono text-xs hidden md:table-cell">
+                    {run.cost_usd !== null ? `$${run.cost_usd.toFixed(4)}` : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-zinc-700 text-xs hidden lg:table-cell">{run.triggered_by}</td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between text-xs font-mono text-zinc-600">
+        <span>{page * PAGE_SIZE + 1}–{page * PAGE_SIZE + runs.length}</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => goToPage(page - 1)}
+            disabled={page === 0 || loading}
+            className="px-2.5 py-1 rounded-md transition-colors disabled:opacity-30 hover:text-zinc-400 disabled:cursor-not-allowed"
+          >
+            ← anterior
+          </button>
+          <span className="text-zinc-700">p.{page + 1}</span>
+          <button
+            onClick={() => goToPage(page + 1)}
+            disabled={!hasMore || loading}
+            className="px-2.5 py-1 rounded-md transition-colors disabled:opacity-30 hover:text-zinc-400 disabled:cursor-not-allowed"
+          >
+            siguiente →
+          </button>
+        </div>
       </div>
     </div>
   );
