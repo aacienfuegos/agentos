@@ -26,6 +26,7 @@ export interface Run {
   tokens_input: number | null;
   tokens_output: number | null;
   cost_usd: number | null;
+  session_id: string | null;
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
@@ -153,10 +154,13 @@ export const api = {
         body: markdown,
         headers: { "Content-Type": "text/markdown" },
       }),
-    query: (id: string, userMessage: string) =>
+    query: (id: string, userMessage: string, resumeSessionId?: string) =>
       apiFetch<{ run_id: string }>(`/api/knowledge-agents/${id}/query`, {
         method: "POST",
-        body: JSON.stringify({ user_message: userMessage }),
+        body: JSON.stringify({
+          user_message: userMessage,
+          ...(resumeSessionId ? { resume_session_id: resumeSessionId } : {}),
+        }),
       }),
   },
 };

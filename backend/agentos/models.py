@@ -59,6 +59,7 @@ class Run(SQLModel, table=True):
     tokens_input: int | None = None
     tokens_output: int | None = None
     cost_usd: float | None = None
+    session_id: str | None = None  # Claude CLI session id, para --resume en knowledge agents
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
