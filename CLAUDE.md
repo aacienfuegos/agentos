@@ -37,6 +37,7 @@ agentos/
 │       ├── config.py           # Settings desde .env (pydantic-settings)
 │       ├── api/                # Routers FastAPI
 │       │   ├── agents.py
+│       │   ├── knowledge_agents.py  # KnowledgeAgent CRUD + query
 │       │   ├── runs.py
 │       │   ├── schedules.py
 │       │   ├── stream.py       # SSE endpoint
@@ -47,7 +48,8 @@ agentos/
 │       │   └── scheduler.py    # APScheduler setup
 │       ├── runner/
 │       │   ├── base.py         # Clase base AgentRunner
-│       │   └── anthropic.py    # Runner vía API Anthropic (streaming)
+│       │   ├── claude_code.py  # Runner principal vía CLI claude (Claude Pro)
+│       │   └── knowledge.py    # KnowledgeRunner — wraps ClaudeCodeRunner con knowledge_doc
 │       ├── tools/              # Tool registry
 │       │   ├── __init__.py     # TOOL_REGISTRY dict
 │       │   ├── filesystem.py
@@ -105,7 +107,7 @@ npx tsc --noEmit
 ## Variables de entorno requeridas
 
 Ver `.env.example`. Las críticas:
-- `ANTHROPIC_API_KEY` — API de Anthropic
+- `ANTHROPIC_API_KEY` — Necesaria para autenticar el CLI `claude` (no la usa el backend directamente)
 - `GITHUB_TOKEN` — Token con permisos `repo` + PR comments
 - `SECRET_KEY` — Para JWT (`openssl rand -hex 32`)
 - `ADMIN_PASSWORD` — Password del panel web
@@ -181,14 +183,13 @@ Ninguna (todo mergeado a develop).
 |------|--------|-------------|
 | phase:polish | #20 | Caddy + Tailscale para acceso seguro en producción |
 | phase:knowledge-2 | #33, #34, #35, #36 | Knowledge Agent: system prompt auto-generado, automatizaciones |
-| phase:multimodel-1 | #37–#42 | Runners OpenAI/Gemini, config multi-modelo, credenciales por proveedor |
-| phase:multimodel-2 | #43, #44, #45 | Consultas cruzadas entre modelos, modo paralelo, UI comparativa |
+| phase:multimodel | #37–#45 | ⚠️ PENDIENTE REDEFINICIÓN — issues originales asumían runners OpenAI/Gemini (incompatible con restricción Claude Pro). Reencuadrar como multi-modelo dentro de Claude: sonnet/haiku/opus vía flag `--model` |
 | phase:scrum-master | pendiente | Agente scrum master: propaga cambios de workflow/CLAUDE.md a todos los repos de dev + scaffolding de proyectos nuevos |
 | phase:arquitecto | pendiente | Agente arquitecto: ingiere ~/docu/homelab como base de conocimiento, asesora y ejecuta despliegues (software de terceros y proyectos propios como tripplanner) |
 | phase:multi-tenant | pendiente | Multi-usuario: tabla de usuarios, API keys cifradas por usuario (Anthropic/GitHub), runner usa key del usuario en lugar de la global. Anthropic no tiene OAuth — el usuario pega su `sk-ant-...` en Settings. |
 
-### Notas de arquitectura añadidas en esta sesión
+### Notas de arquitectura (phase:knowledge-1)
 
-- `KnowledgeRunner` usa el SDK `anthropic` directamente (no el CLI). Runs de knowledge agents tienen `agent_id = "knowledge:{id}"` — SQLite no fuerza FK por defecto, así que funciona sin cambiar el modelo `Run`.
-- `ANTHROPIC_API_KEY` ahora también en `config.py` (antes solo se pasaba como env var al CLI).
+- `KnowledgeRunner` envuelve `ClaudeCodeRunner` (CLI claude, Claude Pro — sin coste extra de API). Crea un `AgentDefinition` proxy en memoria con el `knowledge_doc` inyectado en el system prompt. Para actualizaciones del doc, el agente escribe el fichero completo en `/tmp/knowledge_update_{run_id}.md` vía herramienta `Write`; el runner lo lee al terminar, persiste en SQLite y lo borra.
+- Runs de knowledge agents tienen `agent_id = "knowledge:{id}"` — SQLite no fuerza FK por defecto, así que funciona sin cambiar el modelo `Run`.
 - `api.knowledgeAgents` en `frontend/lib/api.ts` cubre todo el CRUD + export/import + query.
