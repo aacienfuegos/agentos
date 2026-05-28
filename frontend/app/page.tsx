@@ -3,23 +3,38 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, Run, Agent, Stats, HealthStatus } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: "bg-zinc-700 text-zinc-300",
-  running: "bg-blue-900 text-blue-300 animate-pulse",
-  success: "bg-green-900 text-green-300",
-  failed: "bg-red-900 text-red-300",
-  cancelled: "bg-zinc-700 text-zinc-400",
+const STATUS_DOT: Record<string, string> = {
+  pending:   "bg-zinc-500",
+  running:   "bg-sky-400 animate-pulse",
+  success:   "bg-emerald-500",
+  failed:    "bg-red-500",
+  cancelled: "bg-zinc-700",
 };
 
-function StatusBadge({ status }: { status: Run["status"] }) {
+const STATUS_LABEL: Record<string, string> = {
+  pending:   "pendiente",
+  running:   "activo",
+  success:   "ok",
+  failed:    "error",
+  cancelled: "cancelado",
+};
+
+const STATUS_TEXT: Record<string, string> = {
+  pending:   "text-zinc-500",
+  running:   "text-sky-400",
+  success:   "text-emerald-400",
+  failed:    "text-red-400",
+  cancelled: "text-zinc-600",
+};
+
+function StatusDot({ status }: { status: Run["status"] }) {
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[status]}`}>
-      {status}
+    <span className="flex items-center gap-1.5 shrink-0">
+      <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[status]}`} />
+      <span className={`text-xs font-mono ${STATUS_TEXT[status]}`}>{STATUS_LABEL[status] ?? status}</span>
     </span>
   );
 }
@@ -29,16 +44,39 @@ function RunRow({ run, agents }: { run: Run; agents: Agent[] }) {
   const duration =
     run.started_at && run.finished_at
       ? `${Math.round((asUTC(run.finished_at).getTime() - asUTC(run.started_at).getTime()) / 1000)}s`
-      : run.started_at
-      ? "en curso…"
-      : "—";
+      : run.started_at ? "en curso…" : "—";
 
   return (
-    <Link href={`/runs/${run.id}`} className="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-zinc-800 transition-colors">
-      <StatusBadge status={run.status} />
-      <span className="flex-1 text-sm text-zinc-200 truncate">{agent?.name ?? run.agent_id}</span>
-      <span className="text-xs text-zinc-500 font-mono">{duration}</span>
+    <Link
+      href={`/runs/${run.id}`}
+      className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors group"
+    >
+      <StatusDot status={run.status} />
+      <span className="flex-1 text-sm text-zinc-300 truncate group-hover:text-zinc-100 transition-colors">
+        {agent?.name ?? run.agent_id}
+      </span>
+      <span className="text-xs font-mono text-zinc-600">{duration}</span>
     </Link>
+  );
+}
+
+function Panel({
+  title,
+  children,
+  action,
+}: {
+  title: string;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.015]">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
+        <span className="text-[11px] font-mono uppercase tracking-widest text-zinc-500">{title}</span>
+        {action}
+      </div>
+      <div className="p-2">{children}</div>
+    </div>
   );
 }
 
@@ -90,166 +128,155 @@ export default function Dashboard() {
   const builtinAgents = agents.filter((a) => a.is_builtin && a.id !== "custom");
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Left column */}
-      <div className="space-y-6">
-        {/* Active runs */}
-        <Card className="bg-zinc-900 border-zinc-800">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-zinc-400">Ejecuciones activas</CardTitle>
-          </CardHeader>
-          <CardContent>
+    <div className="space-y-6">
+      {/* Top stats strip */}
+      {(stats || health) && (
+        <div className="flex items-center gap-6 text-xs font-mono text-zinc-600">
+          {stats && (
+            <>
+              <span><span className="text-zinc-400">{stats.runs_this_month}</span> este mes</span>
+              <span className="text-zinc-800">·</span>
+              <span><span className="text-zinc-400">{stats.runs_today}</span> hoy</span>
+            </>
+          )}
+          {health && (
+            <>
+              <span className="text-zinc-800">·</span>
+              <span className="flex items-center gap-1.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${health.status === "ok" ? "bg-emerald-500" : "bg-red-500"}`} />
+                {Object.entries(health.services).map(([svc, ok]) => (
+                  <span key={svc} className={ok ? "text-zinc-500" : "text-red-500"}>{svc}</span>
+                )).reduce((acc, el, i) => i === 0 ? [el] : [...acc, <span key={`sep-${i}`} className="text-zinc-800">·</span>, el], [] as React.ReactNode[])}
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Left column */}
+        <div className="space-y-4">
+          <Panel
+            title="Activas"
+            action={activeRuns.length > 0 ? (
+              <span className="font-mono text-[11px] text-amber-400">{activeRuns.length}</span>
+            ) : undefined}
+          >
             {activeRuns.length === 0 ? (
-              <p className="text-sm text-zinc-600 py-2">Sin ejecuciones activas</p>
+              <p className="px-3 py-3 text-xs font-mono text-zinc-700">— sin actividad —</p>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {activeRuns.map((r) => <RunRow key={r.id} run={r} agents={agents} />)}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </Panel>
 
-        {/* Recent runs */}
-        <Card className="bg-zinc-900 border-zinc-800">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium text-zinc-400">Últimas ejecuciones</CardTitle>
-              <Link href="/runs" className="text-xs text-violet-400 hover:text-violet-300">Ver todo →</Link>
-            </div>
-          </CardHeader>
-          <CardContent>
+          <Panel
+            title="Recientes"
+            action={
+              <Link href="/runs" className="text-[11px] font-mono text-amber-400/60 hover:text-amber-400 transition-colors">
+                ver todo →
+              </Link>
+            }
+          >
             {recentRuns.length === 0 ? (
-              <p className="text-sm text-zinc-600 py-2">Sin ejecuciones completadas</p>
+              <p className="px-3 py-3 text-xs font-mono text-zinc-700">— sin ejecuciones —</p>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {recentRuns.map((r) => <RunRow key={r.id} run={r} agents={agents} />)}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </Panel>
+        </div>
 
-        {/* Stats */}
-        {stats && (
-          <Card className="bg-zinc-900 border-zinc-800">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-zinc-400">Este mes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-4 text-center mb-4">
-                <div>
-                  <p className="text-2xl font-bold text-zinc-100">{stats.runs_this_month}</p>
-                  <p className="text-xs text-zinc-500">ejecuciones</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-zinc-100">{stats.runs_today}</p>
-                  <p className="text-xs text-zinc-500">hoy</p>
-                </div>
-              </div>
-              {Object.keys(stats.runs_by_agent_this_month).length > 0 && (
-                <div className="space-y-1">
-                  {Object.entries(stats.runs_by_agent_this_month).map(([agentId, count]) => (
-                    <div key={agentId} className="flex items-center justify-between text-xs">
-                      <span className="text-zinc-400 truncate">{agentId}</span>
-                      <span className="text-zinc-300 font-mono ml-2">{count}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Health */}
-        {health && (
-          <Card className="bg-zinc-900 border-zinc-800">
-            <CardHeader className="pb-3">
-              <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${health.status === "ok" ? "bg-green-500" : "bg-red-500"}`} />
-                <CardTitle className="text-sm font-medium text-zinc-400">
-                  Servicios — {health.status === "ok" ? "operativos" : "degradados"}
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-4 text-xs">
-                {Object.entries(health.services).map(([svc, ok]) => (
-                  <div key={svc} className="flex items-center gap-1.5">
-                    <span className={`w-1.5 h-1.5 rounded-full ${ok ? "bg-green-500" : "bg-red-500"}`} />
-                    <span className="text-zinc-400">{svc}</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      {/* Right column */}
-      <div className="space-y-6">
-        {/* Quick launch */}
-        <Card className="bg-zinc-900 border-zinc-800">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-zinc-400">Lanzar agente</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {builtinAgents.map((agent) => (
-              <Button
-                key={agent.id}
-                variant="outline"
-                className="w-full justify-start text-left border-zinc-700 hover:bg-zinc-800 hover:border-zinc-600"
-                onClick={() => launchAgent(agent.id)}
-                disabled={launching === agent.id}
-              >
-                <span className="font-medium">{agent.name}</span>
-                <span className="ml-2 text-zinc-500 text-xs truncate">{agent.description}</span>
-              </Button>
-            ))}
-            <Button
-              variant="outline"
-              className="w-full border-violet-800 text-violet-400 hover:bg-violet-950 hover:border-violet-600"
-              onClick={() => setShowCustom(!showCustom)}
-            >
-              + Nueva tarea personalizada
-            </Button>
-            {showCustom && (
-              <div className="space-y-2 pt-1">
-                <textarea
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-100 placeholder-zinc-500 resize-none focus:outline-none focus:ring-1 focus:ring-violet-500"
-                  rows={4}
-                  placeholder="Describe la tarea que quieres que ejecute el agente..."
-                  value={customPrompt}
-                  onChange={(e) => setCustomPrompt(e.target.value)}
-                />
-                <Button
-                  className="w-full bg-violet-600 hover:bg-violet-700"
-                  onClick={() => launchAgent("custom", { user_message: customPrompt })}
-                  disabled={!customPrompt.trim() || launching === "custom"}
+        {/* Right column */}
+        <div className="space-y-4">
+          <Panel
+            title="Lanzar"
+            action={
+              <Link href="/agents" className="text-[11px] font-mono text-amber-400/60 hover:text-amber-400 transition-colors">
+                biblioteca →
+              </Link>
+            }
+          >
+            <div className="space-y-0.5">
+              {builtinAgents.map((agent) => (
+                <button
+                  key={agent.id}
+                  onClick={() => launchAgent(agent.id)}
+                  disabled={launching === agent.id}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/[0.04] transition-all text-left disabled:opacity-40 group"
                 >
-                  {launching === "custom" ? "Lanzando…" : "Ejecutar"}
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  <span className="text-amber-400/40 font-mono text-xs group-hover:text-amber-400/80 transition-colors">▶</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-zinc-300 group-hover:text-zinc-100 transition-colors">{agent.name}</p>
+                    <p className="text-xs text-zinc-600 truncate">{agent.description}</p>
+                  </div>
+                  {launching === agent.id && (
+                    <span className="text-[11px] font-mono text-amber-400 animate-pulse">···</span>
+                  )}
+                </button>
+              ))}
 
-        {/* Quick stats */}
-        <Card className="bg-zinc-900 border-zinc-800">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium text-zinc-400">Agentes disponibles</CardTitle>
-              <Link href="/agents" className="text-xs text-violet-400 hover:text-violet-300">Ver biblioteca →</Link>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {agents.map((agent) => (
-              <div key={agent.id} className="flex items-center gap-3 py-1">
-                <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-                <span className="text-sm text-zinc-200">{agent.name}</span>
-                <span className="ml-auto text-xs text-zinc-600">{agent.model.split("-").slice(-2).join("-")}</span>
+              <div className="pt-1">
+                {!showCustom ? (
+                  <button
+                    onClick={() => setShowCustom(true)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-dashed border-white/[0.06] hover:border-amber-400/25 text-zinc-600 hover:text-amber-400/80 transition-all text-sm"
+                  >
+                    <span className="font-mono text-xs">+</span>
+                    tarea personalizada
+                  </button>
+                ) : (
+                  <div className="rounded-lg border border-amber-400/15 bg-amber-400/[0.02] p-3 space-y-2">
+                    <textarea
+                      className="w-full bg-transparent text-sm text-zinc-200 placeholder:text-zinc-700 resize-none focus:outline-none font-mono leading-relaxed"
+                      rows={4}
+                      placeholder="// describe la tarea..."
+                      value={customPrompt}
+                      onChange={(e) => setCustomPrompt(e.target.value)}
+                      autoFocus
+                    />
+                    <div className="flex items-center justify-between pt-1 border-t border-white/[0.04]">
+                      <button
+                        onClick={() => { setShowCustom(false); setCustomPrompt(""); }}
+                        className="text-xs font-mono text-zinc-600 hover:text-zinc-400 transition-colors"
+                      >
+                        cancelar
+                      </button>
+                      <button
+                        onClick={() => launchAgent("custom", { user_message: customPrompt })}
+                        disabled={!customPrompt.trim() || launching === "custom"}
+                        className="text-xs font-mono text-amber-400 hover:text-amber-300 px-3 py-1 border border-amber-400/20 hover:border-amber-400/40 rounded transition-all disabled:opacity-40"
+                      >
+                        {launching === "custom" ? "lanzando···" : "ejecutar →"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            ))}
-          </CardContent>
-        </Card>
+            </div>
+          </Panel>
+
+          <Panel
+            title="Agentes"
+            action={
+              <span className="font-mono text-[11px] text-zinc-600">{agents.length} disponibles</span>
+            }
+          >
+            <div className="space-y-0.5">
+              {agents.map((agent) => (
+                <div key={agent.id} className="flex items-center gap-3 px-3 py-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/60 shrink-0" />
+                  <span className="flex-1 text-sm text-zinc-400">{agent.name}</span>
+                  <span className="text-[11px] font-mono text-zinc-700">
+                    {agent.model.split("-").slice(-2).join("-")}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        </div>
       </div>
     </div>
   );

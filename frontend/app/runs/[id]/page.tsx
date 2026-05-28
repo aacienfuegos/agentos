@@ -6,23 +6,30 @@ import Link from "next/link";
 import { api, Agent } from "@/lib/api";
 import type { Run } from "@/lib/api";
 import { LogStream } from "@/components/LogStream";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Copy, Check, Download } from "lucide-react";
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: "bg-zinc-700 text-zinc-300",
-  running: "bg-blue-900 text-blue-300 animate-pulse",
-  success: "bg-green-900 text-green-300",
-  failed: "bg-red-900 text-red-300",
-  cancelled: "bg-zinc-700 text-zinc-400",
+const STATUS_DOT: Record<string, string> = {
+  pending:   "bg-zinc-500",
+  running:   "bg-sky-400 animate-pulse",
+  success:   "bg-emerald-500",
+  failed:    "bg-red-500",
+  cancelled: "bg-zinc-700",
+};
+
+const STATUS_TEXT: Record<string, string> = {
+  pending:   "text-zinc-500",
+  running:   "text-sky-400",
+  success:   "text-emerald-400",
+  failed:    "text-red-400",
+  cancelled: "text-zinc-600",
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  pending: "pendiente",
-  running: "ejecutando",
-  success: "éxito",
-  failed: "fallido",
+  pending:   "pendiente",
+  running:   "ejecutando",
+  success:   "ok",
+  failed:    "error",
   cancelled: "cancelado",
 };
 
@@ -109,12 +116,15 @@ export default function RunDetail() {
       {/* Header row */}
       <div className="flex items-start justify-between gap-4 shrink-0">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-lg font-semibold text-zinc-100 truncate">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-base font-mono font-semibold text-zinc-200 tracking-tight truncate">
               {agent?.name ?? run.agent_id}
             </h1>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${STATUS_COLORS[run.status]}`}>
-              {STATUS_LABELS[run.status] ?? run.status}
+            <span className="flex items-center gap-1.5 shrink-0">
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[run.status]}`} />
+              <span className={`text-xs font-mono ${STATUS_TEXT[run.status]}`}>
+                {STATUS_LABELS[run.status] ?? run.status}
+              </span>
             </span>
           </div>
           <div className="flex items-center gap-2 mt-1.5 text-xs text-zinc-500 font-mono flex-wrap">
@@ -138,57 +148,62 @@ export default function RunDetail() {
 
         <div className="flex items-center gap-2 shrink-0">
           {run.output && (
-            <Button variant="outline" size="sm" onClick={exportMarkdown}
-              className="border-zinc-700 hover:bg-zinc-800 gap-1.5">
-              <Download className="w-3.5 h-3.5" />
+            <button onClick={exportMarkdown}
+              className="flex items-center gap-1.5 text-xs font-mono text-zinc-600 hover:text-zinc-300 transition-colors px-2.5 py-1 rounded-md hover:bg-white/5">
+              <Download className="w-3 h-3" />
               .md
-            </Button>
+            </button>
           )}
           {isLive && (
-            <Button variant="destructive" size="sm" onClick={handleCancel} disabled={cancelling}>
-              {cancelling ? "Cancelando…" : "Cancelar"}
-            </Button>
+            <button onClick={handleCancel} disabled={cancelling}
+              className="text-xs font-mono text-red-500 hover:text-red-400 px-2.5 py-1 rounded-md hover:bg-red-500/10 transition-colors disabled:opacity-50">
+              {cancelling ? "cancelando···" : "cancelar"}
+            </button>
           )}
         </div>
       </div>
 
       {/* Error banner */}
       {run.error && (
-        <div className="bg-red-950 border border-red-900 rounded-lg px-4 py-3 shrink-0">
-          <p className="text-xs text-red-400 font-mono mb-1">ERROR</p>
-          <p className="text-sm text-red-200">{run.error}</p>
+        <div className="rounded-xl border border-red-500/20 bg-red-500/[0.05] px-4 py-3 shrink-0">
+          <p className="text-[11px] font-mono uppercase tracking-widest text-red-500/60 mb-1">error</p>
+          <p className="text-sm font-mono text-red-300">{run.error}</p>
         </div>
       )}
 
       {/* Tabs — flex-1 para ocupar el espacio restante */}
       <Tabs defaultValue={run.output ? "output" : "logs"} className="flex-1 min-h-0 gap-0">
-        <TabsList className="bg-zinc-900 border border-zinc-800 shrink-0">
-          <TabsTrigger value="output" className="text-xs">Resultado</TabsTrigger>
-          <TabsTrigger value="logs" className="text-xs">Logs</TabsTrigger>
+        <TabsList className="bg-transparent border-0 shrink-0 p-0 gap-1">
+          <TabsTrigger value="output" className="text-xs font-mono px-3 py-1.5 rounded-md data-active:bg-white/[0.06] data-active:text-zinc-100 text-zinc-500 hover:text-zinc-300">
+            resultado
+          </TabsTrigger>
+          <TabsTrigger value="logs" className="text-xs font-mono px-3 py-1.5 rounded-md data-active:bg-white/[0.06] data-active:text-zinc-100 text-zinc-500 hover:text-zinc-300">
+            logs
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="output" className="mt-2 min-h-0 overflow-hidden flex flex-col" keepMounted>
           {run.output ? (
-            <div className="flex flex-col flex-1 min-h-0 bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 shrink-0">
-                <span className="text-xs text-zinc-500 font-mono">
+            <div className="flex flex-col flex-1 min-h-0 rounded-xl border border-white/[0.06] overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.04] shrink-0">
+                <span className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">
                   {(run.output.length / 1000).toFixed(1)}k chars
                 </span>
                 <button
                   onClick={copyOutput}
-                  className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                  className="flex items-center gap-1.5 text-xs font-mono text-zinc-600 hover:text-zinc-300 transition-colors"
                 >
-                  {copiedOutput ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  {copiedOutput ? "Copiado" : "Copiar"}
+                  {copiedOutput ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  {copiedOutput ? "copiado" : "copiar"}
                 </button>
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto p-5">
-                <pre className="whitespace-pre-wrap text-sm text-zinc-200 font-mono leading-relaxed">{run.output}</pre>
+                <pre className="whitespace-pre-wrap text-sm text-zinc-300 font-mono leading-relaxed">{run.output}</pre>
               </div>
             </div>
           ) : (
-            <div className="text-sm text-zinc-600 py-8 text-center">
-              {isLive ? "El agente está trabajando…" : "Sin resultado."}
+            <div className="text-xs font-mono text-zinc-700 py-8 text-center">
+              {isLive ? "ejecutando···" : "— sin resultado —"}
             </div>
           )}
         </TabsContent>

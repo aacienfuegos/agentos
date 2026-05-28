@@ -104,9 +104,9 @@ export function LogStream({ runId, isLive }: { runId: string; isLive: boolean })
   };
 
   return (
-    <div className="flex flex-col h-full bg-zinc-950 rounded-lg border border-zinc-800 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/80 shrink-0">
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
+    <div className="flex flex-col h-full rounded-xl border border-white/[0.06] overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.04] shrink-0">
+        <div className="flex items-center gap-2 text-xs font-mono text-zinc-600">
           <span className="font-mono">{logs.length} eventos</span>
           {connected && isLive && (
             <span className="flex items-center gap-1 text-green-400">
@@ -118,7 +118,7 @@ export function LogStream({ runId, isLive }: { runId: string; isLive: boolean })
         {logs.length > 0 && (
           <button
             onClick={copyLogs}
-            className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="flex items-center gap-1.5 text-xs font-mono text-zinc-600 hover:text-zinc-300 transition-colors"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
             {copied ? "Copiado" : "Copiar"}
