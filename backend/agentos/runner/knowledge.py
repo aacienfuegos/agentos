@@ -19,7 +19,6 @@ from .claude_code import ClaudeCodeRunner, RunResult
 
 logger = logging.getLogger(__name__)
 
-_TOOLS = ["Read", "Write"]
 
 
 @dataclass
@@ -66,12 +65,13 @@ class KnowledgeRunner:
         resume_session_id: str | None = run.input_params.get("resume_session_id")
         system_prompt = _build_system_prompt(ka, run.id) if not resume_session_id else ""
 
+        tools = ka.tools or ["Read"]
         proxy_agent = AgentDefinition(
             id=f"knowledge:{ka.id}",
             name=ka.name,
             description=ka.description,
             system_prompt=system_prompt,
-            tools=_TOOLS,
+            tools=tools,
             model=ka.model,
             max_tokens=ka.max_tokens,
             timeout_seconds=600,
