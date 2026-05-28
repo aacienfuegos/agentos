@@ -64,6 +64,19 @@ class Run(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class KnowledgeAgent(SQLModel, table=True):
+    __tablename__ = "knowledge_agents"
+
+    id: str = Field(primary_key=True)  # slug, e.g. "homelab"
+    name: str
+    description: str = ""
+    system_prompt: str = ""
+    knowledge_doc: str = ""  # Markdown — source of truth in SQLite
+    model: str = "claude-sonnet-4-6"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class LogEntry(SQLModel, table=True):
     __tablename__ = "log_entries"
 
