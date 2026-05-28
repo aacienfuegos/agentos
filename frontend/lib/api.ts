@@ -72,6 +72,17 @@ export interface HealthStatus {
   services: { redis: boolean; database: boolean };
 }
 
+export interface KnowledgeAgent {
+  id: string;
+  name: string;
+  description: string;
+  system_prompt: string;
+  knowledge_doc: string;
+  model: string;
+  created_at: string;
+  updated_at: string;
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
@@ -122,4 +133,22 @@ export const api = {
   },
   stats: () => apiFetch<Stats>("/api/stats"),
   health: () => apiFetch<HealthStatus>("/api/health"),
+  knowledgeAgents: {
+    list: () => apiFetch<KnowledgeAgent[]>("/api/knowledge-agents"),
+    get: (id: string) => apiFetch<KnowledgeAgent>(`/api/knowledge-agents/${id}`),
+    create: (data: Partial<KnowledgeAgent>) =>
+      apiFetch<KnowledgeAgent>("/api/knowledge-agents", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<KnowledgeAgent>) =>
+      apiFetch<KnowledgeAgent>(`/api/knowledge-agents/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id: string) =>
+      apiFetch<void>(`/api/knowledge-agents/${id}`, { method: "DELETE" }),
+    exportDoc: (id: string) =>
+      fetch(`${BASE_URL}/api/knowledge-agents/${id}/document`, { credentials: "include" }),
+    importDoc: (id: string, markdown: string) =>
+      apiFetch<KnowledgeAgent>(`/api/knowledge-agents/${id}/document`, {
+        method: "PUT",
+        body: markdown,
+        headers: { "Content-Type": "text/markdown" },
+      }),
+  },
 };
