@@ -9,9 +9,6 @@ class Settings(BaseSettings):
     secret_key: str
     admin_password: str
 
-    # Anthropic
-    anthropic_api_key: str = ""
-
     # Database
     database_url: str = "sqlite:////data/agentos.db"
 

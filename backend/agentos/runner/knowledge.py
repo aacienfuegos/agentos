@@ -1,14 +1,25 @@
-import json
+"""
+KnowledgeRunner — usa el CLI `claude` (Claude Pro, sin coste extra de API).
+
+El agente recibe el knowledge_doc en el system prompt y, si necesita actualizar
+el documento, usa la herramienta Write para escribir el doc completo en un
+path temporal. Al terminar el run, el runner lee ese fichero, lo persiste en
+SQLite y lo borra.
+"""
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 
-import anthropic
-import redis.asyncio as aioredis
 from sqlmodel import Session
 
-from ..config import settings
 from ..database import engine
-from ..models import KnowledgeAgent, LogEntry, Run
+from ..models import AgentDefinition, KnowledgeAgent, Run
+from .claude_code import ClaudeCodeRunner, RunResult
+
+logger = logging.getLogger(__name__)
+
+_TOOLS = ["Read", "Write"]
 
 
 @dataclass
@@ -19,160 +30,85 @@ class KnowledgeRunResult:
     knowledge_doc_updated: bool = field(default=False)
 
 
-_UPDATE_TOOL: anthropic.types.ToolParam = {
-    "name": "update_knowledge_doc",
-    "description": (
-        "Actualiza la base de conocimiento con nueva información relevante aprendida "
-        "durante la conversación. Usa solo cuando hay información nueva, una corrección "
-        "o una mejora clara respecto al documento actual. No uses para cambios triviales."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "full_doc": {
-                "type": "string",
-                "description": "El documento de conocimiento completo y actualizado en Markdown.",
-            }
-        },
-        "required": ["full_doc"],
-    },
-}
+def _update_path(run_id: str) -> Path:
+    return Path(f"/tmp/knowledge_update_{run_id}.md")
 
 
-def _build_system_prompt(agent: KnowledgeAgent) -> str:
-    base = agent.system_prompt or (
-        f"Eres un asistente especializado en {agent.name}. "
-        "Responde usando la base de conocimiento disponible. "
-        "Sé preciso y cita el documento cuando sea relevante."
+def _build_system_prompt(ka: KnowledgeAgent, run_id: str) -> str:
+    update_file = _update_path(run_id)
+    base = ka.system_prompt or (
+        f"Eres un asistente especializado en {ka.name}. "
+        "Responde usando la base de conocimiento disponible."
     )
     doc_section = (
-        f"\n\n## Base de conocimiento: {agent.name}\n\n{agent.knowledge_doc}"
-        if agent.knowledge_doc
-        else ""
+        f"\n\n## Base de conocimiento: {ka.name}\n\n{ka.knowledge_doc}"
+        if ka.knowledge_doc
+        else f"\n\n## Base de conocimiento: {ka.name}\n\n(sin contenido aún)"
     )
     update_hint = (
-        "\n\n---\n"
-        "Si detectas información nueva o una corrección necesaria, "
-        "usa la herramienta `update_knowledge_doc` con el documento completo actualizado. "
-        "Después del update, menciona brevemente qué has actualizado."
+        f"\n\n---\n"
+        f"Si aprendes algo nuevo o detectas una corrección necesaria en la base de conocimiento, "
+        f"escribe el documento COMPLETO actualizado en Markdown en este fichero:\n\n"
+        f"  {update_file}\n\n"
+        f"Usa la herramienta Write con path=\"{update_file}\" y el documento completo como contenido. "
+        f"Después del write, indica brevemente al usuario qué has actualizado."
     )
     return base + doc_section + update_hint
 
 
 class KnowledgeRunner:
-    def __init__(self, redis_url: str = settings.redis_url):
-        self._redis_url = redis_url
-        self._client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    def __init__(self, redis_url: str | None = None):
+        from ..config import settings
+        self._redis_url = redis_url or settings.redis_url
 
-    async def run(self, run: Run, knowledge_agent: KnowledgeAgent) -> KnowledgeRunResult:
-        redis = aioredis.from_url(self._redis_url)
+    async def run(self, run: Run, ka: KnowledgeAgent) -> KnowledgeRunResult:
+        system_prompt = _build_system_prompt(ka, run.id)
 
-        user_message = run.input_params.get("user_message", "")
-        if not user_message:
-            raise ValueError("input_params must contain 'user_message'")
+        # Build an in-memory AgentDefinition that ClaudeCodeRunner can consume
+        proxy_agent = AgentDefinition(
+            id=f"knowledge:{ka.id}",
+            name=ka.name,
+            description=ka.description,
+            system_prompt=system_prompt,
+            tools=_TOOLS,
+            model=ka.model,
+            max_tokens=ka.max_tokens,
+            timeout_seconds=600,
+            is_builtin=False,
+        )
 
-        system_prompt = _build_system_prompt(knowledge_agent)
-        messages: list[anthropic.types.MessageParam] = [
-            {"role": "user", "content": user_message}
-        ]
+        runner = ClaudeCodeRunner(redis_url=self._redis_url)
+        result: RunResult = await runner.run(run, proxy_agent)
 
-        output = ""
-        tokens_input = 0
-        tokens_output = 0
-        doc_updated = False
-
-        try:
-            for _ in range(10):  # max tool-use iterations
-                response = await self._client.messages.create(
-                    model=knowledge_agent.model,
-                    max_tokens=knowledge_agent.max_tokens,
-                    system=system_prompt,
-                    messages=messages,
-                    tools=[_UPDATE_TOOL],
-                )
-
-                tokens_input += response.usage.input_tokens
-                tokens_output += response.usage.output_tokens
-
-                text_parts = [
-                    block.text for block in response.content
-                    if block.type == "text"
-                ]
-                if text_parts:
-                    output = "\n".join(text_parts)
-
-                tool_uses = [b for b in response.content if b.type == "tool_use"]
-
-                if response.stop_reason == "end_turn" or not tool_uses:
-                    await self._publish(redis, run.id, "info", output)
-                    break
-
-                messages.append({"role": "assistant", "content": response.content})  # type: ignore[arg-type]
-
-                tool_results: list[anthropic.types.ToolResultBlockParam] = []
-                for tool_use in tool_uses:
-                    await self._publish(redis, run.id, "tool_use", tool_use.name, {"tool": tool_use.name})
-
-                    if tool_use.name == "update_knowledge_doc":
-                        new_doc = tool_use.input.get("full_doc", "")
-                        self._update_knowledge_doc(knowledge_agent.id, new_doc)
-                        knowledge_agent.knowledge_doc = new_doc
-                        system_prompt = _build_system_prompt(knowledge_agent)
-                        doc_updated = True
-                        await self._publish(redis, run.id, "tool_result", "Documento actualizado.")
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": tool_use.id,
-                            "content": "Documento de conocimiento actualizado correctamente.",
-                        })
-                    else:
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": tool_use.id,
-                            "content": f"Tool '{tool_use.name}' not available.",
-                            "is_error": True,
-                        })
-
-                messages.append({"role": "user", "content": tool_results})
-
-            await self._publish(redis, run.id, "done", output)
-
-        finally:
-            await redis.aclose()
+        doc_updated = self._apply_update(ka.id, run.id)
 
         return KnowledgeRunResult(
-            output=output,
-            tokens_input=tokens_input,
-            tokens_output=tokens_output,
+            output=result.output,
+            tokens_input=result.tokens_input,
+            tokens_output=result.tokens_output,
             knowledge_doc_updated=doc_updated,
         )
 
-    def _update_knowledge_doc(self, agent_id: str, new_doc: str) -> None:
-        with Session(engine) as session:
-            agent = session.get(KnowledgeAgent, agent_id)
-            if agent:
-                agent.knowledge_doc = new_doc
-                agent.updated_at = datetime.utcnow()
-                session.add(agent)
-                session.commit()
-
-    async def _publish(
-        self,
-        redis: aioredis.Redis,
-        run_id: str,
-        level: str,
-        message: str,
-        metadata: dict | None = None,
-    ) -> None:
-        payload = json.dumps({"level": level, "message": message, "metadata": metadata})
-        await redis.publish(f"run:{run_id}:logs", payload)
-
-        if level not in ("done",):
+    def _apply_update(self, ka_id: str, run_id: str) -> bool:
+        path = _update_path(run_id)
+        if not path.exists():
+            return False
+        try:
+            new_doc = path.read_text(encoding="utf-8")
             with Session(engine) as session:
-                session.add(LogEntry(
-                    run_id=run_id,
-                    level=level,
-                    message=message[:2000],
-                    extra=metadata,
-                ))
-                session.commit()
+                ka = session.get(KnowledgeAgent, ka_id)
+                if ka:
+                    ka.knowledge_doc = new_doc
+                    ka.updated_at = datetime.utcnow()
+                    session.add(ka)
+                    session.commit()
+            logger.info("Knowledge doc updated for agent '%s' (run %s)", ka_id, run_id)
+            return True
+        except Exception as e:
+            logger.error("Failed to apply knowledge doc update: %s", e)
+            return False
+        finally:
+            try:
+                path.unlink(missing_ok=True)
+            except Exception:
+                pass
