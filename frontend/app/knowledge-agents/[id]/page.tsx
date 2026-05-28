@@ -591,6 +591,42 @@ export default function KnowledgeAgentDetail() {
                 <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
               </select>
             </div>
+            <div className="space-y-3">
+              <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Tools</label>
+              {KNOWLEDGE_TOOL_GROUPS.map(({ key, label }) => {
+                const groupTools = KNOWLEDGE_TOOLS.filter((t) => t.group === key);
+                return (
+                  <div key={key}>
+                    <p className="text-[11px] font-mono uppercase tracking-widest text-zinc-700 mb-1.5">{label}</p>
+                    <div className="space-y-0.5">
+                      {groupTools.map(({ name, description }) => {
+                        const active = (agent.tools ?? []).includes(name);
+                        const always = name === "Read";
+                        return (
+                          <button
+                            key={name}
+                            type="button"
+                            onClick={() => toggleTool(name)}
+                            disabled={always || !!togglingTool}
+                            className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-left transition-colors disabled:cursor-default ${
+                              active ? "bg-sky-400/5 hover:bg-sky-400/8" : "hover:bg-white/[0.03]"
+                            }`}
+                          >
+                            <span className={`text-[11px] font-mono w-3 shrink-0 ${active ? "text-sky-400" : "text-zinc-700"}`}>
+                              {togglingTool === name ? "·" : active ? "✓" : "·"}
+                            </span>
+                            <span className={`text-xs font-mono shrink-0 w-24 ${active ? (always ? "text-sky-800" : "text-sky-400") : "text-zinc-600"}`}>
+                              {name}
+                            </span>
+                            <span className="text-[11px] text-zinc-700 leading-snug">{description}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
             <div className="space-y-1.5">
               <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">System prompt</label>
               <textarea
