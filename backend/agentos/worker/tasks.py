@@ -6,15 +6,37 @@ from sqlmodel import Session
 
 from ..config import settings
 from ..database import engine
-from ..models import Run, RunStatus, AgentDefinition
+from ..models import Run, RunStatus, AgentDefinition, KnowledgeAgent
 from ..runner.claude_code import ClaudeCodeRunner
+from ..runner.knowledge import KnowledgeRunner
 from ..tools.notifications import send_notification
+
+_KNOWLEDGE_PREFIX = "knowledge:"
 
 
 async def run_agent_task(ctx: dict, run_id: str) -> None:
     with Session(engine, expire_on_commit=False) as session:
         run = session.get(Run, run_id)
         if not run:
+            return
+
+        # Route to KnowledgeRunner if agent_id starts with "knowledge:"
+        if run.agent_id.startswith(_KNOWLEDGE_PREFIX):
+            ka_id = run.agent_id[len(_KNOWLEDGE_PREFIX):]
+            ka = session.get(KnowledgeAgent, ka_id)
+            if not ka:
+                run.status = RunStatus.failed
+                run.error = f"Knowledge agent '{ka_id}' not found"
+                session.add(run)
+                session.commit()
+                return
+            run.status = RunStatus.running
+            run.started_at = datetime.utcnow()
+            session.add(run)
+            session.commit()
+            session.expunge(run)
+            session.expunge(ka)
+            await _run_knowledge(run, ka)
             return
 
         agent = session.get(AgentDefinition, run.agent_id)
@@ -89,6 +111,34 @@ def _mark_failed(run_id: str, error: str) -> None:
             run.finished_at = datetime.utcnow()
             session.add(run)
             session.commit()
+
+
+async def _run_knowledge(run: Run, ka: KnowledgeAgent) -> None:
+    runner = KnowledgeRunner()
+    run_id = run.id
+    try:
+        result = await runner.run(run, ka)
+        with Session(engine, expire_on_commit=False) as session:
+            run = session.get(Run, run_id)
+            run.status = RunStatus.success
+            run.output = result.output
+            run.tokens_input = result.tokens_input
+            run.tokens_output = result.tokens_output
+            run.finished_at = datetime.utcnow()
+            session.add(run)
+            session.commit()
+        await send_notification(
+            title=f"✅ {ka.name} completado",
+            message=f"Tokens: {result.tokens_input + result.tokens_output}",
+            priority="default",
+        )
+    except Exception as e:
+        _mark_failed(run_id, str(e))
+        await send_notification(
+            title=f"❌ {ka.name} falló",
+            message=str(e)[:200],
+            priority="high",
+        )
 
 
 def _duration(run: Run) -> str:

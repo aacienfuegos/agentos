@@ -73,6 +73,7 @@ class KnowledgeAgent(SQLModel, table=True):
     system_prompt: str = ""
     knowledge_doc: str = ""  # Markdown — source of truth in SQLite
     model: str = "claude-sonnet-4-6"
+    max_tokens: int = 4096
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

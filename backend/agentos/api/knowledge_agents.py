@@ -1,13 +1,16 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
+from arq import create_pool
+from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from ..config import settings
 from ..database import get_session
-from ..models import KnowledgeAgent
+from ..models import KnowledgeAgent, Run, RunStatus
 
 router = APIRouter()
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -103,3 +106,32 @@ async def import_knowledge_doc(agent_id: str, request: Request, session: Session
     session.commit()
     session.refresh(agent)
     return agent
+
+
+class KnowledgeQuery(BaseModel):
+    user_message: str
+
+
+@router.post("/{agent_id}/query", status_code=201)
+async def query_knowledge_agent(
+    agent_id: str, data: KnowledgeQuery, session: SessionDep
+) -> dict[str, Any]:
+    agent = session.get(KnowledgeAgent, agent_id)
+    if not agent:
+        raise HTTPException(404, "Knowledge agent not found")
+
+    run = Run(
+        agent_id=f"knowledge:{agent_id}",
+        input_params={"knowledge_agent_id": agent_id, "user_message": data.user_message},
+        triggered_by="manual",
+        status=RunStatus.pending,
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+
+    pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+    await pool.enqueue_job("run_agent_task", run.id)
+    await pool.aclose()
+
+    return {"run_id": run.id}
