@@ -154,12 +154,13 @@ export const api = {
         body: markdown,
         headers: { "Content-Type": "text/markdown" },
       }),
-    query: (id: string, userMessage: string, resumeSessionId?: string) =>
+    query: (id: string, userMessage: string, resumeSessionId?: string, conversationId?: string) =>
       apiFetch<{ run_id: string }>(`/api/knowledge-agents/${id}/query`, {
         method: "POST",
         body: JSON.stringify({
           user_message: userMessage,
           ...(resumeSessionId ? { resume_session_id: resumeSessionId } : {}),
+          ...(conversationId ? { conversation_id: conversationId } : {}),
         }),
       }),
   },

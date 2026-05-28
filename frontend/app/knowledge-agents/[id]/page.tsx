@@ -1,14 +1,20 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, KnowledgeAgent, Run } from "@/lib/api";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
 
-type View = "chat" | "document";
+type View = "chat" | "document" | "conversations";
 
+interface ConversationSummary {
+  convId: string;
+  firstMessage: string;
+  msgCount: number;
+  lastAt: string;
+}
 
 const STATUS_TEXT: Record<string, string> = {
   pending: "text-zinc-500",
@@ -29,15 +35,30 @@ interface ChatMessage {
 
 export default function KnowledgeAgentDetail() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [agent, setAgent] = useState<KnowledgeAgent | null>(null);
   const [view, setView] = useState<View>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  // conversationId: stable UUID that identifies this chat thread, lives in ?conv= URL param
+  const [conversationId, setConversationId] = useState<string | null>(searchParams.get("conv"));
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  // latestSessionId: Claude CLI session_id for --resume, updated after each run, NOT in URL
+  const [latestSessionId, setLatestSessionId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [docEdit, setDocEdit] = useState("");
   const [savingDoc, setSavingDoc] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const setConversation = (convId: string | null) => {
+    setConversationId(convId);
+    if (convId) {
+      router.replace(`/knowledge-agents/${id}?conv=${convId}`, { scroll: false });
+    } else {
+      router.replace(`/knowledge-agents/${id}`, { scroll: false });
+    }
+  };
 
   const loadAgent = async () => {
     const a = await api.knowledgeAgents.get(id);
@@ -45,7 +66,60 @@ export default function KnowledgeAgentDetail() {
     setDocEdit(a.knowledge_doc);
   };
 
-  useEffect(() => { loadAgent(); }, [id]);
+  const loadConversationHistory = async (convId: string) => {
+    const allRuns = await api.runs.list({ agent_id: `knowledge:${id}`, limit: 200 });
+    const convRuns = allRuns
+      .filter((r) => (r.input_params as Record<string, string>).conversation_id === convId)
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+    const msgs: ChatMessage[] = [];
+    for (const run of convRuns) {
+      const userMsg = (run.input_params as Record<string, string>).user_message ?? "";
+      msgs.push({ role: "user", content: userMsg });
+      msgs.push({
+        role: "assistant",
+        content: run.status === "success" ? (run.output ?? "") : (run.error ?? "Error desconocido"),
+        run_id: run.id,
+        status: run.status,
+        tokens: (run.tokens_input ?? 0) + (run.tokens_output ?? 0),
+      });
+    }
+    setMessages(msgs);
+
+    // Restore the latest Claude session_id for --resume
+    const lastWithSession = [...convRuns].reverse().find((r) => r.session_id);
+    if (lastWithSession?.session_id) setLatestSessionId(lastWithSession.session_id);
+  };
+
+  const loadConversations = async () => {
+    const allRuns = await api.runs.list({ agent_id: `knowledge:${id}`, limit: 200 });
+    const groups = new Map<string, Run[]>();
+    for (const run of allRuns) {
+      const convId = (run.input_params as Record<string, string>).conversation_id;
+      if (!convId) continue;
+      if (!groups.has(convId)) groups.set(convId, []);
+      groups.get(convId)!.push(run);
+    }
+    const summaries: ConversationSummary[] = [];
+    for (const [convId, runs] of groups) {
+      const sorted = runs.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      const firstMsg = (sorted[0].input_params as Record<string, string>).user_message ?? "";
+      summaries.push({
+        convId,
+        firstMessage: firstMsg,
+        msgCount: sorted.length,
+        lastAt: sorted[sorted.length - 1].created_at,
+      });
+    }
+    summaries.sort((a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime());
+    setConversations(summaries);
+  };
+
+  const initialConv = useRef(searchParams.get("conv"));
+  useEffect(() => {
+    loadAgent();
+    if (initialConv.current) loadConversationHistory(initialConv.current);
+  }, [id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -57,13 +131,24 @@ export default function KnowledgeAgentDetail() {
     setInput("");
     setSending(true);
 
+    // Generate conversation_id on first message
+    let convId = conversationId;
+    if (!convId) {
+      convId = crypto.randomUUID();
+      setConversation(convId);
+    }
+
     setMessages((m) => [...m, { role: "user", content: userMsg }]);
     setMessages((m) => [...m, { role: "assistant", content: "", status: "pending" }]);
 
     try {
-      const { run_id } = await api.knowledgeAgents.query(id, userMsg, sessionId ?? undefined);
+      const { run_id } = await api.knowledgeAgents.query(
+        id,
+        userMsg,
+        latestSessionId ?? undefined,
+        convId,
+      );
 
-      // Poll the run until done
       const poll = async () => {
         const run = await api.runs.get(run_id);
         if (run.status === "running" || run.status === "pending") {
@@ -71,7 +156,6 @@ export default function KnowledgeAgentDetail() {
           return;
         }
 
-        // Reload agent to get updated knowledge_doc
         const updatedAgent = await api.knowledgeAgents.get(id);
         const docUpdated = updatedAgent.knowledge_doc !== agent?.knowledge_doc;
         if (docUpdated) {
@@ -79,7 +163,7 @@ export default function KnowledgeAgentDetail() {
           setDocEdit(updatedAgent.knowledge_doc);
         }
 
-        if (run.session_id) setSessionId(run.session_id);
+        if (run.session_id) setLatestSessionId(run.session_id);
 
         setMessages((m) => {
           const updated = [...m];
@@ -169,20 +253,28 @@ export default function KnowledgeAgentDetail() {
           >
             documento {agent.knowledge_doc ? `(${(agent.knowledge_doc.length / 1000).toFixed(1)}k)` : "(vacío)"}
           </button>
+          <button
+            onClick={() => { setView("conversations"); loadConversations(); }}
+            className={`px-2.5 py-1 rounded-md text-xs font-mono transition-colors ${
+              view === "conversations" ? "bg-white/[0.08] text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
+            }`}
+          >
+            conversaciones
+          </button>
         </div>
       </div>
 
       {/* Chat view */}
       {view === "chat" && (
         <>
-          {/* Session bar */}
-          {messages.length > 0 && (
+          {/* Conversation bar */}
+          {(messages.length > 0 || conversationId) && (
             <div className="shrink-0 flex items-center justify-between px-1">
               <span className="text-[11px] font-mono text-zinc-700">
-                {sessionId ? `sesión ${sessionId.slice(0, 8)}…` : "sin sesión"}
+                {conversationId ? `conv ${conversationId.slice(0, 8)}…` : "sin sesión"}
               </span>
               <button
-                onClick={() => { setMessages([]); setSessionId(null); }}
+                onClick={() => { setMessages([]); setLatestSessionId(null); setConversation(null); }}
                 disabled={sending}
                 className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors disabled:opacity-30"
               >
@@ -196,9 +288,11 @@ export default function KnowledgeAgentDetail() {
               <div className="flex items-center justify-center h-full">
                 <div className="text-center">
                   <p className="text-xs font-mono text-zinc-700">
-                    {agent.knowledge_doc
-                      ? `Consulta a ${agent.name} — responderá con el contexto de su base de conocimiento`
-                      : "Este agente aún no tiene base de conocimiento. Ve al panel «documento» para añadirla."}
+                    {conversationId
+                      ? `Retomando conversación ${conversationId.slice(0, 8)}… — escribe para continuar`
+                      : agent.knowledge_doc
+                        ? `Consulta a ${agent.name} — responderá con el contexto de su base de conocimiento`
+                        : "Este agente aún no tiene base de conocimiento. Ve al panel «documento» para añadirla."}
                   </p>
                 </div>
               </div>
@@ -271,6 +365,40 @@ export default function KnowledgeAgentDetail() {
             </button>
           </div>
         </>
+      )}
+
+      {/* Conversations view */}
+      {view === "conversations" && (
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-1">
+          {conversations.length === 0 ? (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-xs font-mono text-zinc-700">sin conversaciones anteriores</p>
+            </div>
+          ) : (
+            conversations.map((conv) => (
+              <div key={conv.convId} className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-white/[0.04] hover:border-white/[0.08] hover:bg-white/[0.02] transition-colors group">
+                <div className="min-w-0">
+                  <p className="text-sm text-zinc-300 truncate">{conv.firstMessage}</p>
+                  <p className="text-[11px] font-mono text-zinc-700 mt-0.5">
+                    conv {conv.convId.slice(0, 8)}… · {conv.msgCount} {conv.msgCount === 1 ? "mensaje" : "mensajes"} · {asUTC(conv.lastAt).toLocaleDateString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setMessages([]);
+                    setLatestSessionId(null);
+                    setConversation(conv.convId);
+                    loadConversationHistory(conv.convId);
+                    setView("chat");
+                  }}
+                  className="text-xs font-mono text-zinc-600 hover:text-amber-400 transition-colors shrink-0"
+                >
+                  retomar →
+                </button>
+              </div>
+            ))
+          )}
+        </div>
       )}
 
       {/* Document view */}

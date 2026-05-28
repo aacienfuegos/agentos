@@ -64,7 +64,8 @@ export default function RunDetail() {
         try {
           const ka = await api.knowledgeAgents.get(kaId);
           setAgentName(ka.name);
-          setAgentLink(`/knowledge-agents/${kaId}`);
+          const convId = (r.input_params as Record<string, string>).conversation_id;
+          setAgentLink(`/knowledge-agents/${kaId}${convId ? `?conv=${convId}` : ""}`);
         } catch { setAgentName(r.agent_id); }
       } else {
         try {

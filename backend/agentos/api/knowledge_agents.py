@@ -110,6 +110,8 @@ async def import_knowledge_doc(agent_id: str, request: Request, session: Session
 
 class KnowledgeQuery(BaseModel):
     user_message: str
+    resume_session_id: str | None = None
+    conversation_id: str | None = None
 
 
 @router.post("/{agent_id}/query", status_code=201)
@@ -120,9 +122,18 @@ async def query_knowledge_agent(
     if not agent:
         raise HTTPException(404, "Knowledge agent not found")
 
+    input_params: dict[str, Any] = {
+        "knowledge_agent_id": agent_id,
+        "user_message": data.user_message,
+    }
+    if data.resume_session_id:
+        input_params["resume_session_id"] = data.resume_session_id
+    if data.conversation_id:
+        input_params["conversation_id"] = data.conversation_id
+
     run = Run(
         agent_id=f"knowledge:{agent_id}",
-        input_params={"knowledge_agent_id": agent_id, "user_message": data.user_message},
+        input_params=input_params,
         triggered_by="manual",
         status=RunStatus.pending,
     )
