@@ -51,6 +51,7 @@ export default function KnowledgeAgentDetail() {
   const [savingDoc, setSavingDoc] = useState(false);
   const [configForm, setConfigForm] = useState({ name: "", description: "", model: "", system_prompt: "" });
   const [savingConfig, setSavingConfig] = useState(false);
+  const [savedConfig, setSavedConfig] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [togglingTool, setTogglingTool] = useState<string | null>(null);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
@@ -257,6 +258,8 @@ export default function KnowledgeAgentDetail() {
     try {
       const updated = await api.knowledgeAgents.update(id, configForm);
       setAgent(updated);
+      setSavedConfig(true);
+      setTimeout(() => setSavedConfig(false), 2000);
     } finally {
       setSavingConfig(false);
     }
@@ -274,6 +277,12 @@ export default function KnowledgeAgentDetail() {
   };
 
   if (!agent) return <div className="text-zinc-500 text-sm p-8">Cargando…</div>;
+
+  const configDirty =
+    configForm.name !== agent.name ||
+    configForm.description !== agent.description ||
+    configForm.model !== agent.model ||
+    configForm.system_prompt !== agent.system_prompt;
 
   return (
     <div className="flex flex-col h-[calc(100dvh-120px)] gap-4">
@@ -657,10 +666,10 @@ export default function KnowledgeAgentDetail() {
               </button>
               <button
                 type="submit"
-                disabled={savingConfig}
-                className="text-xs font-mono text-amber-400 hover:text-amber-300 px-4 py-1.5 border border-amber-400/20 hover:border-amber-400/40 rounded-md transition-all disabled:opacity-40"
+                disabled={savingConfig || !configDirty}
+                className="text-xs font-mono px-4 py-1.5 border rounded-md transition-all disabled:opacity-40 disabled:cursor-default text-amber-400 hover:text-amber-300 border-amber-400/20 hover:border-amber-400/40 enabled:hover:border-amber-400/40"
               >
-                {savingConfig ? "guardando···" : "guardar cambios →"}
+                {savingConfig ? "guardando···" : savedConfig ? "guardado ✓" : "guardar cambios →"}
               </button>
             </div>
           </form>
