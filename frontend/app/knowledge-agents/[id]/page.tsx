@@ -53,7 +53,8 @@ export default function KnowledgeAgentDetail() {
   const [savingConfig, setSavingConfig] = useState(false);
   const [savedConfig, setSavedConfig] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [togglingTool, setTogglingTool] = useState<string | null>(null);
+  const [chatTools, setChatTools] = useState<string[]>([]);
+  const [savingDefaultTools, setSavingDefaultTools] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -72,6 +73,7 @@ export default function KnowledgeAgentDetail() {
     setAgent(a);
     setDocEdit(a.knowledge_doc);
     setConfigForm({ name: a.name, description: a.description, model: a.model, system_prompt: a.system_prompt, tools: a.tools ?? ["Read", "Write"] });
+    setChatTools(a.tools ?? ["Read", "Write"]);
   };
 
   const loadConversationHistory = async (convId: string) => {
@@ -160,11 +162,19 @@ export default function KnowledgeAgentDetail() {
     setMessages((m) => [...m, { role: "assistant", content: "", status: "pending" }]);
 
     try {
+      const agentDefaultTools = agent?.tools ?? ["Read", "Write"];
+      const toolsOverride =
+        chatTools.length !== agentDefaultTools.length ||
+        chatTools.some((t) => !agentDefaultTools.includes(t))
+          ? chatTools
+          : undefined;
+
       const { run_id } = await api.knowledgeAgents.query(
         id,
         userMsg,
         latestSessionId ?? undefined,
         convId,
+        toolsOverride,
       );
 
       const poll = async () => {
@@ -216,17 +226,22 @@ export default function KnowledgeAgentDetail() {
     }
   };
 
-  const toggleTool = async (name: string) => {
-    if (!agent || togglingTool || name === "Read") return;
-    setTogglingTool(name);
+  const toggleChatTool = (name: string) => {
+    if (name === "Read") return;
+    setChatTools((prev) =>
+      prev.includes(name) ? prev.filter((t) => t !== name) : [...prev, name]
+    );
+  };
+
+  const saveDefaultTools = async () => {
+    if (!agent) return;
+    setSavingDefaultTools(true);
     try {
-      const current = agent.tools ?? ["Read", "Write"];
-      const next = current.includes(name) ? current.filter((t) => t !== name) : [...current, name];
-      const updated = await api.knowledgeAgents.update(id, { tools: next });
+      const updated = await api.knowledgeAgents.update(id, { tools: chatTools });
       setAgent(updated);
       setConfigForm((f) => ({ ...f, tools: updated.tools ?? ["Read", "Write"] }));
     } finally {
-      setTogglingTool(null);
+      setSavingDefaultTools(false);
     }
   };
 
@@ -352,7 +367,7 @@ export default function KnowledgeAgentDetail() {
                 <span className="text-[11px] font-mono text-zinc-800">tools:</span>
                 <span className="text-[11px] font-mono text-sky-800">Read</span>
                 {(() => {
-                  const extra = (agent.tools ?? []).filter((t) => t !== "Read");
+                  const extra = chatTools.filter((t) => t !== "Read");
                   const shown = extra.slice(0, 2);
                   const rest = extra.length - shown.length;
                   return (
@@ -374,19 +389,19 @@ export default function KnowledgeAgentDetail() {
                         <p className="text-[10px] font-mono uppercase tracking-widest text-zinc-700 mb-1">{label}</p>
                         <div className="space-y-0.5">
                           {groupTools.map(({ name, description }) => {
-                            const active = (agent.tools ?? []).includes(name);
+                            const active = chatTools.includes(name);
                             const always = name === "Read";
                             return (
                               <button
                                 key={name}
-                                onClick={() => toggleTool(name)}
-                                disabled={always || !!togglingTool}
+                                onClick={() => toggleChatTool(name)}
+                                disabled={always}
                                 className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-left transition-colors disabled:cursor-default ${
                                   active ? "hover:bg-sky-400/5" : "hover:bg-white/[0.03]"
                                 }`}
                               >
                                 <span className={`text-[11px] font-mono w-3 shrink-0 ${active ? "text-sky-400" : "text-zinc-700"}`}>
-                                  {togglingTool === name ? "·" : active ? "✓" : "·"}
+                                  {active ? "✓" : "·"}
                                 </span>
                                 <span className={`text-xs font-mono shrink-0 w-24 ${active ? (always ? "text-sky-800" : "text-sky-400") : "text-zinc-600"}`}>
                                   {name}
@@ -399,6 +414,17 @@ export default function KnowledgeAgentDetail() {
                       </div>
                     );
                   })}
+                  {/* Save as default */}
+                  <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between">
+                    <span className="text-[11px] font-mono text-zinc-700">solo para esta conversación</span>
+                    <button
+                      onClick={saveDefaultTools}
+                      disabled={savingDefaultTools}
+                      className="text-[11px] font-mono text-amber-400/70 hover:text-amber-400 transition-colors disabled:opacity-40"
+                    >
+                      {savingDefaultTools ? "guardando···" : "guardar como defecto →"}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

@@ -114,6 +114,7 @@ class KnowledgeQuery(BaseModel):
     user_message: str
     resume_session_id: str | None = None
     conversation_id: str | None = None
+    tools: list[str] | None = None
 
 
 @router.post("/{agent_id}/query", status_code=201)
@@ -132,6 +133,8 @@ async def query_knowledge_agent(
         input_params["resume_session_id"] = data.resume_session_id
     if data.conversation_id:
         input_params["conversation_id"] = data.conversation_id
+    if data.tools is not None:
+        input_params["tools"] = data.tools
 
     run = Run(
         agent_id=f"knowledge:{agent_id}",
