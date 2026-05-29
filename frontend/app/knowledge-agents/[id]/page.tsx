@@ -49,7 +49,7 @@ export default function KnowledgeAgentDetail() {
   const [sending, setSending] = useState(false);
   const [docEdit, setDocEdit] = useState("");
   const [savingDoc, setSavingDoc] = useState(false);
-  const [configForm, setConfigForm] = useState({ name: "", description: "", model: "", system_prompt: "" });
+  const [configForm, setConfigForm] = useState({ name: "", description: "", model: "", system_prompt: "", tools: [] as string[] });
   const [savingConfig, setSavingConfig] = useState(false);
   const [savedConfig, setSavedConfig] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -71,7 +71,7 @@ export default function KnowledgeAgentDetail() {
     const a = await api.knowledgeAgents.get(id);
     setAgent(a);
     setDocEdit(a.knowledge_doc);
-    setConfigForm({ name: a.name, description: a.description, model: a.model, system_prompt: a.system_prompt });
+    setConfigForm({ name: a.name, description: a.description, model: a.model, system_prompt: a.system_prompt, tools: a.tools ?? ["Read", "Write"] });
   };
 
   const loadConversationHistory = async (convId: string) => {
@@ -278,11 +278,14 @@ export default function KnowledgeAgentDetail() {
 
   if (!agent) return <div className="text-zinc-500 text-sm p-8">Cargando…</div>;
 
+  const agentTools = agent.tools ?? ["Read", "Write"];
   const configDirty =
     configForm.name !== agent.name ||
     configForm.description !== agent.description ||
     configForm.model !== agent.model ||
-    configForm.system_prompt !== agent.system_prompt;
+    configForm.system_prompt !== agent.system_prompt ||
+    configForm.tools.length !== agentTools.length ||
+    configForm.tools.some((t) => !agentTools.includes(t));
 
   return (
     <div className="flex flex-col h-[calc(100dvh-120px)] gap-4">
@@ -625,20 +628,28 @@ export default function KnowledgeAgentDetail() {
                       <p className="text-[11px] font-mono uppercase tracking-widest text-zinc-700 mb-1.5">{label}</p>
                       <div className="space-y-0.5">
                         {groupTools.map(({ name, description }) => {
-                          const active = (agent.tools ?? []).includes(name);
+                          const active = configForm.tools.includes(name);
                           const always = name === "Read";
                           return (
                             <button
                               key={name}
                               type="button"
-                              onClick={() => toggleTool(name)}
-                              disabled={always || !!togglingTool}
+                              onClick={() => {
+                                if (always) return;
+                                setConfigForm((f) => ({
+                                  ...f,
+                                  tools: f.tools.includes(name)
+                                    ? f.tools.filter((t) => t !== name)
+                                    : [...f.tools, name],
+                                }));
+                              }}
+                              disabled={always}
                               className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-left transition-colors disabled:cursor-default ${
                                 active ? "bg-sky-400/5 hover:bg-sky-400/8" : "hover:bg-white/[0.03]"
                               }`}
                             >
                               <span className={`text-[11px] font-mono w-3 shrink-0 ${active ? "text-sky-400" : "text-zinc-700"}`}>
-                                {togglingTool === name ? "·" : active ? "✓" : "·"}
+                                {active ? "✓" : "·"}
                               </span>
                               <span className={`text-xs font-mono shrink-0 w-24 ${active ? (always ? "text-sky-800" : "text-sky-400") : "text-zinc-600"}`}>
                                 {name}
