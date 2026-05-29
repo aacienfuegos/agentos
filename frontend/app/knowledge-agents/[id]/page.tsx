@@ -561,82 +561,91 @@ export default function KnowledgeAgentDetail() {
       {/* Config view */}
       {view === "config" && (
         <div className="flex-1 min-h-0 overflow-y-auto">
-          <form onSubmit={saveConfig} className="space-y-5 max-w-lg">
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Nombre</label>
-              <input
-                value={configForm.name}
-                onChange={(e) => setConfigForm((f) => ({ ...f, name: e.target.value }))}
-                required
-                className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Descripción</label>
-              <input
-                value={configForm.description}
-                onChange={(e) => setConfigForm((f) => ({ ...f, description: e.target.value }))}
-                className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Modelo</label>
-              <select
-                value={configForm.model}
-                onChange={(e) => setConfigForm((f) => ({ ...f, model: e.target.value }))}
-                className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:border-amber-400/30"
-              >
-                <option value="claude-sonnet-4-6">Sonnet 4.6</option>
-                <option value="claude-opus-4-7">Opus 4.7</option>
-                <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
-              </select>
-            </div>
-            <div className="space-y-3">
-              <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Tools</label>
-              {KNOWLEDGE_TOOL_GROUPS.map(({ key, label }) => {
-                const groupTools = KNOWLEDGE_TOOLS.filter((t) => t.group === key);
-                return (
-                  <div key={key}>
-                    <p className="text-[11px] font-mono uppercase tracking-widest text-zinc-700 mb-1.5">{label}</p>
-                    <div className="space-y-0.5">
-                      {groupTools.map(({ name, description }) => {
-                        const active = (agent.tools ?? []).includes(name);
-                        const always = name === "Read";
-                        return (
-                          <button
-                            key={name}
-                            type="button"
-                            onClick={() => toggleTool(name)}
-                            disabled={always || !!togglingTool}
-                            className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-left transition-colors disabled:cursor-default ${
-                              active ? "bg-sky-400/5 hover:bg-sky-400/8" : "hover:bg-white/[0.03]"
-                            }`}
-                          >
-                            <span className={`text-[11px] font-mono w-3 shrink-0 ${active ? "text-sky-400" : "text-zinc-700"}`}>
-                              {togglingTool === name ? "·" : active ? "✓" : "·"}
-                            </span>
-                            <span className={`text-xs font-mono shrink-0 w-24 ${active ? (always ? "text-sky-800" : "text-sky-400") : "text-zinc-600"}`}>
-                              {name}
-                            </span>
-                            <span className="text-[11px] text-zinc-700 leading-snug">{description}</span>
-                          </button>
-                        );
-                      })}
+          <form onSubmit={saveConfig} className="flex flex-col gap-5">
+            <div className="flex flex-col lg:flex-row gap-8">
+              {/* Left: form fields */}
+              <div className="flex-1 min-w-0 space-y-5">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Nombre</label>
+                  <input
+                    value={configForm.name}
+                    onChange={(e) => setConfigForm((f) => ({ ...f, name: e.target.value }))}
+                    required
+                    className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Descripción</label>
+                  <input
+                    value={configForm.description}
+                    onChange={(e) => setConfigForm((f) => ({ ...f, description: e.target.value }))}
+                    className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Modelo</label>
+                  <select
+                    value={configForm.model}
+                    onChange={(e) => setConfigForm((f) => ({ ...f, model: e.target.value }))}
+                    className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:border-amber-400/30"
+                  >
+                    <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+                    <option value="claude-opus-4-7">Opus 4.7</option>
+                    <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">System prompt</label>
+                  <textarea
+                    value={configForm.system_prompt}
+                    onChange={(e) => setConfigForm((f) => ({ ...f, system_prompt: e.target.value }))}
+                    rows={8}
+                    placeholder="Instrucciones adicionales para el agente…"
+                    className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2.5 text-sm text-zinc-300 font-mono leading-relaxed placeholder-zinc-800 focus:outline-none focus:border-amber-400/30 resize-none"
+                  />
+                </div>
+              </div>
+
+              {/* Right (mobile: after system prompt): tools */}
+              <div className="lg:w-72 shrink-0 space-y-3">
+                <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Tools</label>
+                {KNOWLEDGE_TOOL_GROUPS.map(({ key, label }) => {
+                  const groupTools = KNOWLEDGE_TOOLS.filter((t) => t.group === key);
+                  return (
+                    <div key={key}>
+                      <p className="text-[11px] font-mono uppercase tracking-widest text-zinc-700 mb-1.5">{label}</p>
+                      <div className="space-y-0.5">
+                        {groupTools.map(({ name, description }) => {
+                          const active = (agent.tools ?? []).includes(name);
+                          const always = name === "Read";
+                          return (
+                            <button
+                              key={name}
+                              type="button"
+                              onClick={() => toggleTool(name)}
+                              disabled={always || !!togglingTool}
+                              className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-left transition-colors disabled:cursor-default ${
+                                active ? "bg-sky-400/5 hover:bg-sky-400/8" : "hover:bg-white/[0.03]"
+                              }`}
+                            >
+                              <span className={`text-[11px] font-mono w-3 shrink-0 ${active ? "text-sky-400" : "text-zinc-700"}`}>
+                                {togglingTool === name ? "·" : active ? "✓" : "·"}
+                              </span>
+                              <span className={`text-xs font-mono shrink-0 w-24 ${active ? (always ? "text-sky-800" : "text-sky-400") : "text-zinc-600"}`}>
+                                {name}
+                              </span>
+                              <span className="text-[11px] text-zinc-700 leading-snug">{description}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">System prompt</label>
-              <textarea
-                value={configForm.system_prompt}
-                onChange={(e) => setConfigForm((f) => ({ ...f, system_prompt: e.target.value }))}
-                rows={8}
-                placeholder="Instrucciones adicionales para el agente…"
-                className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2.5 text-sm text-zinc-300 font-mono leading-relaxed placeholder-zinc-800 focus:outline-none focus:border-amber-400/30 resize-none"
-              />
-            </div>
+
+            {/* Actions — full width below both columns */}
             <div className="flex items-center justify-between pt-1">
               <button
                 type="button"
