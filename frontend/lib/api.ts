@@ -136,6 +136,10 @@ export const api = {
     get: (id: string) => apiFetch<Agent>(`/api/agents/${id}`),
     create: (data: Partial<Agent>) =>
       apiFetch<Agent>("/api/agents", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<Agent>) =>
+      apiFetch<Agent>(`/api/agents/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id: string) =>
+      apiFetch<void>(`/api/agents/${id}`, { method: "DELETE" }),
   },
   runs: {
     list: (params?: { agent_id?: string; statuses?: string[]; limit?: number; offset?: number }) => {
@@ -183,13 +187,14 @@ export const api = {
         body: markdown,
         headers: { "Content-Type": "text/markdown" },
       }),
-    query: (id: string, userMessage: string, resumeSessionId?: string, conversationId?: string) =>
+    query: (id: string, userMessage: string, resumeSessionId?: string, conversationId?: string, tools?: string[]) =>
       apiFetch<{ run_id: string }>(`/api/knowledge-agents/${id}/query`, {
         method: "POST",
         body: JSON.stringify({
           user_message: userMessage,
           ...(resumeSessionId ? { resume_session_id: resumeSessionId } : {}),
           ...(conversationId ? { conversation_id: conversationId } : {}),
+          ...(tools ? { tools } : {}),
         }),
       }),
   },

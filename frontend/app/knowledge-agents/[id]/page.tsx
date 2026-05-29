@@ -7,7 +7,7 @@ import { api, KnowledgeAgent, Run, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
 
-type View = "chat" | "document" | "conversations";
+type View = "chat" | "document" | "conversations" | "config";
 
 interface ConversationSummary {
   convId: string;
@@ -49,7 +49,12 @@ export default function KnowledgeAgentDetail() {
   const [sending, setSending] = useState(false);
   const [docEdit, setDocEdit] = useState("");
   const [savingDoc, setSavingDoc] = useState(false);
-  const [togglingTool, setTogglingTool] = useState<string | null>(null);
+  const [configForm, setConfigForm] = useState({ name: "", description: "", model: "", system_prompt: "", tools: [] as string[] });
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [savedConfig, setSavedConfig] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [chatTools, setChatTools] = useState<string[]>([]);
+  const [savingDefaultTools, setSavingDefaultTools] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -67,6 +72,8 @@ export default function KnowledgeAgentDetail() {
     const a = await api.knowledgeAgents.get(id);
     setAgent(a);
     setDocEdit(a.knowledge_doc);
+    setConfigForm({ name: a.name, description: a.description, model: a.model, system_prompt: a.system_prompt, tools: a.tools ?? ["Read", "Write"] });
+    setChatTools(a.tools ?? ["Read", "Write"]);
   };
 
   const loadConversationHistory = async (convId: string) => {
@@ -155,11 +162,19 @@ export default function KnowledgeAgentDetail() {
     setMessages((m) => [...m, { role: "assistant", content: "", status: "pending" }]);
 
     try {
+      const agentDefaultTools = agent?.tools ?? ["Read", "Write"];
+      const toolsOverride =
+        chatTools.length !== agentDefaultTools.length ||
+        chatTools.some((t) => !agentDefaultTools.includes(t))
+          ? chatTools
+          : undefined;
+
       const { run_id } = await api.knowledgeAgents.query(
         id,
         userMsg,
         latestSessionId ?? undefined,
         convId,
+        toolsOverride,
       );
 
       const poll = async () => {
@@ -211,16 +226,22 @@ export default function KnowledgeAgentDetail() {
     }
   };
 
-  const toggleTool = async (name: string) => {
-    if (!agent || togglingTool || name === "Read") return;
-    setTogglingTool(name);
+  const toggleChatTool = (name: string) => {
+    if (name === "Read") return;
+    setChatTools((prev) =>
+      prev.includes(name) ? prev.filter((t) => t !== name) : [...prev, name]
+    );
+  };
+
+  const saveDefaultTools = async () => {
+    if (!agent) return;
+    setSavingDefaultTools(true);
     try {
-      const current = agent.tools ?? ["Read", "Write"];
-      const next = current.includes(name) ? current.filter((t) => t !== name) : [...current, name];
-      const updated = await api.knowledgeAgents.update(id, { tools: next });
+      const updated = await api.knowledgeAgents.update(id, { tools: chatTools });
       setAgent(updated);
+      setConfigForm((f) => ({ ...f, tools: updated.tools ?? ["Read", "Write"] }));
     } finally {
-      setTogglingTool(null);
+      setSavingDefaultTools(false);
     }
   };
 
@@ -246,7 +267,41 @@ export default function KnowledgeAgentDetail() {
     a.click();
   };
 
+  const saveConfig = async (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    if (!agent) return;
+    setSavingConfig(true);
+    try {
+      const updated = await api.knowledgeAgents.update(id, configForm);
+      setAgent(updated);
+      setSavedConfig(true);
+      setTimeout(() => setSavedConfig(false), 2000);
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  const deleteAgent = async () => {
+    if (!confirm(`¿Eliminar "${agent?.name}"? Esta acción no se puede deshacer.`)) return;
+    setDeleting(true);
+    try {
+      await api.knowledgeAgents.delete(id);
+      router.push("/knowledge-agents");
+    } catch {
+      setDeleting(false);
+    }
+  };
+
   if (!agent) return <div className="text-zinc-500 text-sm p-8">Cargando…</div>;
+
+  const agentTools = agent.tools ?? ["Read", "Write"];
+  const configDirty =
+    configForm.name !== agent.name ||
+    configForm.description !== agent.description ||
+    configForm.model !== agent.model ||
+    configForm.system_prompt !== agent.system_prompt ||
+    configForm.tools.length !== agentTools.length ||
+    configForm.tools.some((t) => !agentTools.includes(t));
 
   return (
     <div className="flex flex-col h-[calc(100dvh-120px)] gap-4">
@@ -287,6 +342,14 @@ export default function KnowledgeAgentDetail() {
           >
             conversaciones
           </button>
+          <button
+            onClick={() => setView("config")}
+            className={`px-2.5 py-1 rounded-md text-xs font-mono transition-colors ${
+              view === "config" ? "bg-white/[0.08] text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
+            }`}
+          >
+            config
+          </button>
         </div>
       </div>
 
@@ -304,7 +367,7 @@ export default function KnowledgeAgentDetail() {
                 <span className="text-[11px] font-mono text-zinc-800">tools:</span>
                 <span className="text-[11px] font-mono text-sky-800">Read</span>
                 {(() => {
-                  const extra = (agent.tools ?? []).filter((t) => t !== "Read");
+                  const extra = chatTools.filter((t) => t !== "Read");
                   const shown = extra.slice(0, 2);
                   const rest = extra.length - shown.length;
                   return (
@@ -326,19 +389,19 @@ export default function KnowledgeAgentDetail() {
                         <p className="text-[10px] font-mono uppercase tracking-widest text-zinc-700 mb-1">{label}</p>
                         <div className="space-y-0.5">
                           {groupTools.map(({ name, description }) => {
-                            const active = (agent.tools ?? []).includes(name);
+                            const active = chatTools.includes(name);
                             const always = name === "Read";
                             return (
                               <button
                                 key={name}
-                                onClick={() => toggleTool(name)}
-                                disabled={always || !!togglingTool}
+                                onClick={() => toggleChatTool(name)}
+                                disabled={always}
                                 className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-left transition-colors disabled:cursor-default ${
                                   active ? "hover:bg-sky-400/5" : "hover:bg-white/[0.03]"
                                 }`}
                               >
                                 <span className={`text-[11px] font-mono w-3 shrink-0 ${active ? "text-sky-400" : "text-zinc-700"}`}>
-                                  {togglingTool === name ? "·" : active ? "✓" : "·"}
+                                  {active ? "✓" : "·"}
                                 </span>
                                 <span className={`text-xs font-mono shrink-0 w-24 ${active ? (always ? "text-sky-800" : "text-sky-400") : "text-zinc-600"}`}>
                                   {name}
@@ -351,6 +414,17 @@ export default function KnowledgeAgentDetail() {
                       </div>
                     );
                   })}
+                  {/* Save as default */}
+                  <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between">
+                    <span className="text-[11px] font-mono text-zinc-700">solo para esta conversación</span>
+                    <button
+                      onClick={saveDefaultTools}
+                      disabled={savingDefaultTools}
+                      className="text-[11px] font-mono text-amber-400/70 hover:text-amber-400 transition-colors disabled:opacity-40"
+                    >
+                      {savingDefaultTools ? "guardando···" : "guardar como defecto →"}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -520,6 +594,123 @@ export default function KnowledgeAgentDetail() {
             placeholder="# Base de conocimiento\n\nEscribe aquí el documento en Markdown…"
             className="flex-1 min-h-0 bg-zinc-900 border border-white/[0.06] rounded-xl px-4 py-4 text-sm text-zinc-300 font-mono leading-relaxed focus:outline-none focus:border-amber-400/20 resize-none placeholder-zinc-800"
           />
+        </div>
+      )}
+
+      {/* Config view */}
+      {view === "config" && (
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <form onSubmit={saveConfig} className="flex flex-col gap-5">
+            <div className="flex flex-col lg:flex-row gap-8">
+              {/* Left: form fields */}
+              <div className="flex-1 min-w-0 space-y-5">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Nombre</label>
+                  <input
+                    value={configForm.name}
+                    onChange={(e) => setConfigForm((f) => ({ ...f, name: e.target.value }))}
+                    required
+                    className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Descripción</label>
+                  <input
+                    value={configForm.description}
+                    onChange={(e) => setConfigForm((f) => ({ ...f, description: e.target.value }))}
+                    className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Modelo</label>
+                  <select
+                    value={configForm.model}
+                    onChange={(e) => setConfigForm((f) => ({ ...f, model: e.target.value }))}
+                    className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:border-amber-400/30"
+                  >
+                    <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+                    <option value="claude-opus-4-7">Opus 4.7</option>
+                    <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">System prompt</label>
+                  <textarea
+                    value={configForm.system_prompt}
+                    onChange={(e) => setConfigForm((f) => ({ ...f, system_prompt: e.target.value }))}
+                    rows={8}
+                    placeholder="Instrucciones adicionales para el agente…"
+                    className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2.5 text-sm text-zinc-300 font-mono leading-relaxed placeholder-zinc-800 focus:outline-none focus:border-amber-400/30 resize-none"
+                  />
+                </div>
+              </div>
+
+              {/* Right (mobile: after system prompt): tools */}
+              <div className="lg:w-72 shrink-0 space-y-3">
+                <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Tools</label>
+                {KNOWLEDGE_TOOL_GROUPS.map(({ key, label }) => {
+                  const groupTools = KNOWLEDGE_TOOLS.filter((t) => t.group === key);
+                  return (
+                    <div key={key}>
+                      <p className="text-[11px] font-mono uppercase tracking-widest text-zinc-700 mb-1.5">{label}</p>
+                      <div className="space-y-0.5">
+                        {groupTools.map(({ name, description }) => {
+                          const active = configForm.tools.includes(name);
+                          const always = name === "Read";
+                          return (
+                            <button
+                              key={name}
+                              type="button"
+                              onClick={() => {
+                                if (always) return;
+                                setConfigForm((f) => ({
+                                  ...f,
+                                  tools: f.tools.includes(name)
+                                    ? f.tools.filter((t) => t !== name)
+                                    : [...f.tools, name],
+                                }));
+                              }}
+                              disabled={always}
+                              className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-left transition-colors disabled:cursor-default ${
+                                active ? "bg-sky-400/5 hover:bg-sky-400/8" : "hover:bg-white/[0.03]"
+                              }`}
+                            >
+                              <span className={`text-[11px] font-mono w-3 shrink-0 ${active ? "text-sky-400" : "text-zinc-700"}`}>
+                                {active ? "✓" : "·"}
+                              </span>
+                              <span className={`text-xs font-mono shrink-0 w-24 ${active ? (always ? "text-sky-800" : "text-sky-400") : "text-zinc-600"}`}>
+                                {name}
+                              </span>
+                              <span className="text-[11px] text-zinc-700 leading-snug">{description}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Actions — full width below both columns */}
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="button"
+                onClick={deleteAgent}
+                disabled={deleting}
+                className="text-xs font-mono text-red-500/60 hover:text-red-400 transition-colors disabled:opacity-30"
+              >
+                {deleting ? "eliminando···" : "eliminar agente"}
+              </button>
+              <button
+                type="submit"
+                disabled={savingConfig || !configDirty}
+                className="text-xs font-mono px-4 py-1.5 border rounded-md transition-all disabled:opacity-40 disabled:cursor-default text-amber-400 hover:text-amber-300 border-amber-400/20 hover:border-amber-400/40 enabled:hover:border-amber-400/40"
+              >
+                {savingConfig ? "guardando···" : savedConfig ? "guardado ✓" : "guardar cambios →"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>
