@@ -224,6 +224,7 @@ export default function KnowledgeAgentDetail() {
       const next = current.includes(name) ? current.filter((t) => t !== name) : [...current, name];
       const updated = await api.knowledgeAgents.update(id, { tools: next });
       setAgent(updated);
+      setConfigForm((f) => ({ ...f, tools: updated.tools ?? ["Read", "Write"] }));
     } finally {
       setTogglingTool(null);
     }
