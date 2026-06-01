@@ -137,6 +137,12 @@ export default function Dashboard() {
               <span><span className="text-zinc-400">{stats.runs_this_month}</span> este mes</span>
               <span className="text-zinc-800">·</span>
               <span><span className="text-zinc-400">{stats.runs_today}</span> hoy</span>
+              {stats.tokens_this_month.total > 0 && (
+                <>
+                  <span className="text-zinc-800">·</span>
+                  <span><span className="text-zinc-400">{(stats.tokens_this_month.total / 1000).toFixed(0)}k</span> tokens este mes</span>
+                </>
+              )}
             </>
           )}
           {health && (

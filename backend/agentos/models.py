@@ -59,9 +59,25 @@ class Run(SQLModel, table=True):
     tokens_input: int | None = None
     tokens_output: int | None = None
     cost_usd: float | None = None
+    session_id: str | None = None  # Claude CLI session id, para --resume en knowledge agents
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class KnowledgeAgent(SQLModel, table=True):
+    __tablename__ = "knowledge_agents"
+
+    id: str = Field(primary_key=True)  # slug, e.g. "homelab"
+    name: str
+    description: str = ""
+    system_prompt: str = ""
+    knowledge_doc: str = ""  # Markdown — source of truth in SQLite
+    model: str = "claude-sonnet-4-6"
+    max_tokens: int = 4096
+    tools: list[str] = Field(default_factory=lambda: ["Read", "Write"], sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class LogEntry(SQLModel, table=True):

@@ -14,6 +14,16 @@
 - Los logs SSE son **JSON** (nunca texto plano)
 - El frontend NO llama a la API de Anthropic directamente
 
+## Restricción de coste — solo Claude Pro, nunca SDK de pago
+
+**Todos los agentes ejecutan mediante el CLI `claude`**, no mediante el SDK `anthropic` ni ningún otro SDK de LLM (OpenAI, Gemini, etc.). La razón es económica y de diseño: el proyecto corre sobre un plan Claude Pro mensual fijo; cualquier llamada directa a la API incurre en coste adicional por tokens.
+
+Implicaciones concretas:
+- El backend **nunca** importa `anthropic`, `openai`, `google-generativeai` ni equivalentes para ejecutar modelos
+- Toda ejecución de agentes va por `ClaudeCodeRunner` (o runners que lo compongan, como `KnowledgeRunner`)
+- Cuando una feature necesita intercambiar datos con el agente en tiempo de ejecución (ej: actualizar un documento), se hace mediante las herramientas nativas del CLI (`Write`, `Read`, `Bash`) y ficheros temporales, no mediante tool use del SDK
+- Antes de añadir cualquier dependencia de SDK de LLM a `pyproject.toml`, confirmar explícitamente con el propietario del proyecto
+
 ## Workflow
 1. Crear rama `feat/<nombre>-issue-<número>` o `fix/<nombre>-issue-<número>`
 2. Implementar con type hints

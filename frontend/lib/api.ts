@@ -26,6 +26,7 @@ export interface Run {
   tokens_input: number | null;
   tokens_output: number | null;
   cost_usd: number | null;
+  session_id: string | null;
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
@@ -47,8 +48,14 @@ export interface Stats {
   runs_today: number;
   runs_this_month: number;
   active_runs: number;
+  scheduled_jobs: number;
   status_counts: Record<string, number>;
   runs_by_agent_this_month: Record<string, number>;
+  tokens_this_month: { input: number; output: number; total: number };
+  cost_this_month_usd: number;
+  cost_by_agent: Record<string, number>;
+  monthly_budget_usd: number;
+  budget_exceeded: boolean;
 }
 
 export interface LogEntry {
@@ -65,6 +72,46 @@ export interface HealthStatus {
   version: string;
   services: { redis: boolean; database: boolean };
 }
+
+export interface KnowledgeAgent {
+  id: string;
+  name: string;
+  description: string;
+  system_prompt: string;
+  knowledge_doc: string;
+  model: string;
+  tools: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeTool {
+  name: string;
+  description: string;
+  group: "filesystem" | "web" | "sistema" | "avanzado";
+}
+
+export const KNOWLEDGE_TOOLS: KnowledgeTool[] = [
+  { name: "Read",         description: "Leer ficheros",                               group: "filesystem" },
+  { name: "Write",        description: "Escribir ficheros (actualizar el documento)",  group: "filesystem" },
+  { name: "Edit",         description: "Ediciones quirúrgicas en ficheros",            group: "filesystem" },
+  { name: "Glob",         description: "Buscar ficheros por patrón",                  group: "filesystem" },
+  { name: "Grep",         description: "Buscar texto en ficheros",                    group: "filesystem" },
+  { name: "LS",           description: "Listar directorios",                          group: "filesystem" },
+  { name: "WebFetch",     description: "Descargar URLs concretas",                    group: "web" },
+  { name: "WebSearch",    description: "Buscar en internet",                          group: "web" },
+  { name: "Bash",         description: "Ejecutar comandos shell",                     group: "sistema" },
+  { name: "Task",         description: "Lanzar subagentes",                           group: "avanzado" },
+  { name: "NotebookRead", description: "Leer notebooks Jupyter",                      group: "avanzado" },
+  { name: "NotebookEdit", description: "Editar notebooks Jupyter",                    group: "avanzado" },
+];
+
+export const KNOWLEDGE_TOOL_GROUPS: { key: KnowledgeTool["group"]; label: string }[] = [
+  { key: "filesystem", label: "Filesystem" },
+  { key: "web",        label: "Web" },
+  { key: "sistema",    label: "Sistema" },
+  { key: "avanzado",   label: "Avanzado" },
+];
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -89,10 +136,19 @@ export const api = {
     get: (id: string) => apiFetch<Agent>(`/api/agents/${id}`),
     create: (data: Partial<Agent>) =>
       apiFetch<Agent>("/api/agents", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<Agent>) =>
+      apiFetch<Agent>(`/api/agents/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id: string) =>
+      apiFetch<void>(`/api/agents/${id}`, { method: "DELETE" }),
   },
   runs: {
-    list: (params?: { agent_id?: string; status?: string; limit?: number }) => {
-      const qs = new URLSearchParams(params as Record<string, string>).toString();
+    list: (params?: { agent_id?: string; statuses?: string[]; limit?: number; offset?: number }) => {
+      const p = new URLSearchParams();
+      if (params?.agent_id) p.set("agent_id", params.agent_id);
+      if (params?.limit !== undefined) p.set("limit", String(params.limit));
+      if (params?.offset !== undefined) p.set("offset", String(params.offset));
+      for (const s of params?.statuses ?? []) p.append("status", s);
+      const qs = p.toString();
       return apiFetch<Run[]>(`/api/runs${qs ? `?${qs}` : ""}`);
     },
     get: (id: string) => apiFetch<Run>(`/api/runs/${id}`),
@@ -114,4 +170,32 @@ export const api = {
   },
   stats: () => apiFetch<Stats>("/api/stats"),
   health: () => apiFetch<HealthStatus>("/api/health"),
+  knowledgeAgents: {
+    list: () => apiFetch<KnowledgeAgent[]>("/api/knowledge-agents"),
+    get: (id: string) => apiFetch<KnowledgeAgent>(`/api/knowledge-agents/${id}`),
+    create: (data: Partial<KnowledgeAgent>) =>
+      apiFetch<KnowledgeAgent>("/api/knowledge-agents", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<KnowledgeAgent>) =>
+      apiFetch<KnowledgeAgent>(`/api/knowledge-agents/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id: string) =>
+      apiFetch<void>(`/api/knowledge-agents/${id}`, { method: "DELETE" }),
+    exportDoc: (id: string) =>
+      fetch(`${BASE_URL}/api/knowledge-agents/${id}/document`, { credentials: "include" }),
+    importDoc: (id: string, markdown: string) =>
+      apiFetch<KnowledgeAgent>(`/api/knowledge-agents/${id}/document`, {
+        method: "PUT",
+        body: markdown,
+        headers: { "Content-Type": "text/markdown" },
+      }),
+    query: (id: string, userMessage: string, resumeSessionId?: string, conversationId?: string, tools?: string[]) =>
+      apiFetch<{ run_id: string }>(`/api/knowledge-agents/${id}/query`, {
+        method: "POST",
+        body: JSON.stringify({
+          user_message: userMessage,
+          ...(resumeSessionId ? { resume_session_id: resumeSessionId } : {}),
+          ...(conversationId ? { conversation_id: conversationId } : {}),
+          ...(tools ? { tools } : {}),
+        }),
+      }),
+  },
 };

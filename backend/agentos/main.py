@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import create_db_and_tables, engine
-from .api import agents, runs, schedules, stream, stats, webhooks, auth
+from .api import agents, runs, schedules, stream, stats, webhooks, auth, knowledge_agents
 from .api.auth import verify_token
 from .worker.scheduler import start_scheduler, stop_scheduler
 from .agents.builtin import seed_builtin_agents
@@ -58,6 +58,7 @@ app.include_router(schedules.router, prefix="/api/schedules", tags=["schedules"]
 app.include_router(stream.router, prefix="/api/runs", tags=["stream"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["webhooks"])
+app.include_router(knowledge_agents.router, prefix="/api/knowledge-agents", tags=["knowledge-agents"])
 
 
 @app.get("/api/health")

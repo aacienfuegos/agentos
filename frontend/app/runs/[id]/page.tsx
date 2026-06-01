@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { api, Agent } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { Run } from "@/lib/api";
 import { LogStream } from "@/components/LogStream";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -50,7 +50,8 @@ function MetaDot() {
 export default function RunDetail() {
   const { id } = useParams<{ id: string }>();
   const [run, setRun] = useState<Run | null>(null);
-  const [agent, setAgent] = useState<Agent | null>(null);
+  const [agentName, setAgentName] = useState<string | null>(null);
+  const [agentLink, setAgentLink] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [copiedOutput, setCopiedOutput] = useState(false);
 
@@ -58,8 +59,20 @@ export default function RunDetail() {
     const load = async () => {
       const r = await api.runs.get(id);
       setRun(r);
-      const a = await api.agents.get(r.agent_id);
-      setAgent(a);
+      if (r.agent_id.startsWith("knowledge:")) {
+        const kaId = r.agent_id.slice("knowledge:".length);
+        try {
+          const ka = await api.knowledgeAgents.get(kaId);
+          setAgentName(ka.name);
+          const convId = (r.input_params as Record<string, string>).conversation_id;
+          setAgentLink(`/knowledge-agents/${kaId}${convId ? `?conv=${convId}` : ""}`);
+        } catch { setAgentName(r.agent_id); }
+      } else {
+        try {
+          const a = await api.agents.get(r.agent_id);
+          setAgentName(a.name);
+        } catch { setAgentName(r.agent_id); }
+      }
     };
     load();
 
@@ -109,16 +122,26 @@ export default function RunDetail() {
     // nav=56px + py-8 top+bottom=64px → contenido ocupa exactamente lo que queda
     <div className="flex flex-col gap-4 h-[calc(100dvh-120px)] w-full">
       {/* Breadcrumb */}
-      <Link href="/runs" className="text-xs text-zinc-500 hover:text-zinc-400 inline-flex items-center gap-1 shrink-0">
-        ← Ejecuciones
-      </Link>
+      <div className="flex items-center gap-3 shrink-0">
+        <Link href="/runs" className="text-xs text-zinc-500 hover:text-zinc-400 inline-flex items-center gap-1">
+          ← Ejecuciones
+        </Link>
+        {agentLink && (
+          <>
+            <span className="text-zinc-800">·</span>
+            <Link href={agentLink} className="text-xs text-zinc-500 hover:text-amber-400 transition-colors">
+              volver al chat →
+            </Link>
+          </>
+        )}
+      </div>
 
       {/* Header row */}
       <div className="flex items-start justify-between gap-4 shrink-0">
         <div className="min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-base font-mono font-semibold text-zinc-200 tracking-tight truncate">
-              {agent?.name ?? run.agent_id}
+              {agentName ?? run.agent_id}
             </h1>
             <span className="flex items-center gap-1.5 shrink-0">
               <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[run.status]}`} />
