@@ -55,6 +55,7 @@ export default function KnowledgeAgentDetail() {
   const [deleting, setDeleting] = useState(false);
   const [chatTools, setChatTools] = useState<string[]>([]);
   const [savingDefaultTools, setSavingDefaultTools] = useState(false);
+  const [savedDefaultTools, setSavedDefaultTools] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -240,6 +241,8 @@ export default function KnowledgeAgentDetail() {
       const updated = await api.knowledgeAgents.update(id, { tools: chatTools });
       setAgent(updated);
       setConfigForm((f) => ({ ...f, tools: updated.tools ?? ["Read", "Write"] }));
+      setSavedDefaultTools(true);
+      setTimeout(() => setSavedDefaultTools(false), 2000);
     } finally {
       setSavingDefaultTools(false);
     }
@@ -415,16 +418,34 @@ export default function KnowledgeAgentDetail() {
                     );
                   })}
                   {/* Save as default */}
-                  <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between">
-                    <span className="text-[11px] font-mono text-zinc-700">solo para esta conversación</span>
-                    <button
-                      onClick={saveDefaultTools}
-                      disabled={savingDefaultTools}
-                      className="text-[11px] font-mono text-amber-400/70 hover:text-amber-400 transition-colors disabled:opacity-40"
-                    >
-                      {savingDefaultTools ? "guardando···" : "guardar como defecto →"}
-                    </button>
+                  <div className="pt-3 mt-1 border-t border-white/[0.06] space-y-2.5">
+                    <p className="text-[11px] font-mono text-zinc-700">
+                      cambios solo para esta conversación
+                    </p>
+                    <div className="flex items-center justify-between">
+                      {(chatTools.length !== agentTools.length || chatTools.some((t) => !agentTools.includes(t))) ? (
+                        <button
+                          onClick={() => setChatTools(agentTools)}
+                          className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors"
+                        >
+                          ↺ restaurar defecto
+                        </button>
+                      ) : (
+                        <span />
+                      )}
+                      <button
+                        onClick={saveDefaultTools}
+                        disabled={savingDefaultTools || savedDefaultTools || (
+                          chatTools.length === agentTools.length &&
+                          chatTools.every((t) => agentTools.includes(t))
+                        )}
+                        className="text-[11px] font-mono text-amber-400/70 hover:text-amber-400 transition-colors disabled:opacity-40"
+                      >
+                        {savingDefaultTools ? "guardando···" : savedDefaultTools ? "guardado ✓" : "guardar como defecto →"}
+                      </button>
+                    </div>
                   </div>
+
                 </div>
               )}
             </div>
