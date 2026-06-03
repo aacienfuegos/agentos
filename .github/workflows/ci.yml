@@ -31,7 +31,7 @@ jobs:
         working-directory: backend
 
       - name: Auditoría de seguridad Python
-        run: uvx pip-audit
+        run: uv run pip-audit
         working-directory: backend
 
       # ── Frontend (Node.js + npm) ───────────────────────────────────────────
