@@ -45,19 +45,17 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
           git add backend/uv.lock
-          git commit -m "chore(deps): uv lock --upgrade $(date +%Y-%m-%d) (#76)"
+          git commit -m "chore(deps): uv lock --upgrade $(date +%Y-%m-%d)"
           git push origin "$BRANCH"
+          {
+            echo "Actualización automática semanal de dependencias Python via \`uv lock --upgrade\`."
+            echo ""
+            echo "## Verificación"
+            echo "- [ ] CI pasa (tests + pip-audit)"
+            echo "- [ ] Sin cambios de comportamiento esperados"
+          } > /tmp/pr-body.md
           gh pr create \
             --base develop \
             --head "$BRANCH" \
             --title "chore(deps): actualizar dependencias Python $(date +%Y-%m-%d)" \
-            --body "$(cat <<'EOF'
-Actualización automática semanal de dependencias Python via \`uv lock --upgrade\`.
-
-> Generado por el workflow \`uv-lock-upgrade.yml\` — cierra #76 parcialmente (workflow recurrente).
-
-## Verificación
-- [ ] CI pasa (tests + pip-audit)
-- [ ] Sin cambios de comportamiento esperados
-EOF
-)"
+            --body-file /tmp/pr-body.md
