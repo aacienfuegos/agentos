@@ -14,6 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && npm install -g @anthropic-ai/claude-code \
+    && npm install -g picomatch@^4.0.4 \
+    && npm dedupe -g \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files first for layer caching
