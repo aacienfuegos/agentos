@@ -141,7 +141,7 @@ feat/nombre-N  ──PR──►  develop  ──PR──►  main
 9. Revisar en local con los servicios dev (`docker compose -f docker-compose.dev.yml up -d`). Si está bien, PR de `develop → main`
 10. Merge a `main` → deploy manual en producción
 
-> **Pendiente (backlog):** Configurar GitHub Actions para CI automático (tests + type check en cada PR) y publicación de imagen Docker en ghcr.io al hacer push a `develop` y `main`.
+> **CI configurado:** GitHub Actions activo — `deploy-staging.yml` (push a `develop`) y `deploy-production.yml` (push a `main`). Cada workflow ejecuta tests + pip-audit + npm audit, construye las dos imágenes Docker, las escanea con Trivy v0.71.0 (binario directo, no la action comprometida) y las publica en ghcr.io. Dependabot semanal para npm, pip, docker y github-actions.
 
 ## Arquitectura de agentes
 
