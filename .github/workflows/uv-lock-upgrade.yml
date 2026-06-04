@@ -1,0 +1,63 @@
+name: Actualizar dependencias Python (uv lock --upgrade)
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # Lunes 08:00 UTC
+  workflow_dispatch:
+
+jobs:
+  upgrade:
+    name: uv lock --upgrade
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v6
+        with:
+          ref: develop
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Actualizar uv.lock
+        run: uv lock --upgrade
+        working-directory: backend
+
+      - name: Comprobar si hay cambios
+        id: changes
+        run: |
+          if git diff --quiet backend/uv.lock; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Abrir PR si hay cambios
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="chore/uv-lock-upgrade-$(date +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add backend/uv.lock
+          git commit -m "chore(deps): uv lock --upgrade $(date +%Y-%m-%d) (#76)"
+          git push origin "$BRANCH"
+          gh pr create \
+            --base develop \
+            --head "$BRANCH" \
+            --title "chore(deps): actualizar dependencias Python $(date +%Y-%m-%d)" \
+            --body "$(cat <<'EOF'
+Actualización automática semanal de dependencias Python via \`uv lock --upgrade\`.
+
+> Generado por el workflow \`uv-lock-upgrade.yml\` — cierra #76 parcialmente (workflow recurrente).
+
+## Verificación
+- [ ] CI pasa (tests + pip-audit)
+- [ ] Sin cambios de comportamiento esperados
+EOF
+)"
