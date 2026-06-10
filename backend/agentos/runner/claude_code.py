@@ -29,6 +29,7 @@ class ClaudeCodeRunner:
         agent,
         persist_session: bool = False,
         resume_session_id: str | None = None,
+        cwd: str | None = None,
     ) -> RunResult:
         redis = aioredis.from_url(self._redis_url)
         cancel_sub = redis.pubsub()
@@ -65,6 +66,7 @@ class ClaudeCodeRunner:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
+            cwd=cwd,
         )
 
         output = ""

@@ -15,6 +15,7 @@ _MIGRATIONS = [
     ("knowledge_agents", "web_access", "INTEGER NOT NULL DEFAULT 0"),
     ("knowledge_agents", "write_access", "INTEGER NOT NULL DEFAULT 1"),
     ("knowledge_agents", "tools", 'TEXT DEFAULT \'["Read","Write"]\''),
+    ("knowledge_agents", "knowledge_path", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 

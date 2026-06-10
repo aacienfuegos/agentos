@@ -1,4 +1,6 @@
+import logging
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Any
 
 from arq import create_pool
@@ -11,9 +13,19 @@ from sqlmodel import Session, select
 from ..config import settings
 from ..database import get_session
 from ..models import KnowledgeAgent, Run, RunStatus
+from ..runner.knowledge import default_knowledge_path, ensure_knowledge_dir
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 SessionDep = Annotated[Session, Depends(get_session)]
+
+_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", ".mypy_cache", ".pytest_cache"}
+_TEXT_EXTENSIONS = {
+    ".md", ".txt", ".yaml", ".yml", ".json", ".toml", ".ini", ".cfg", ".conf",
+    ".py", ".sh", ".env", ".example", ".rst", ".csv", ".xml", ".html", ".css",
+    ".js", ".ts", ".tsx", ".jsx",
+}
 
 
 class KnowledgeAgentCreate(BaseModel):
@@ -21,7 +33,7 @@ class KnowledgeAgentCreate(BaseModel):
     name: str
     description: str = ""
     system_prompt: str = ""
-    knowledge_doc: str = ""
+    knowledge_path: str = ""
     model: str = "claude-sonnet-4-6"
     tools: list[str] = ["Read", "Write"]
 
@@ -30,7 +42,7 @@ class KnowledgeAgentUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     system_prompt: str | None = None
-    knowledge_doc: str | None = None
+    knowledge_path: str | None = None
     model: str | None = None
     tools: list[str] | None = None
 
@@ -44,10 +56,17 @@ def list_knowledge_agents(session: SessionDep) -> list[KnowledgeAgent]:
 def create_knowledge_agent(data: KnowledgeAgentCreate, session: SessionDep) -> KnowledgeAgent:
     if session.get(KnowledgeAgent, data.id):
         raise HTTPException(400, f"Knowledge agent '{data.id}' already exists")
-    agent = KnowledgeAgent(**data.model_dump())
+    payload = data.model_dump()
+    if not payload["knowledge_path"]:
+        payload["knowledge_path"] = default_knowledge_path(data.id)
+    agent = KnowledgeAgent(**payload)
     session.add(agent)
     session.commit()
     session.refresh(agent)
+    try:
+        ensure_knowledge_dir(agent)
+    except OSError as e:
+        logger.warning("Could not create knowledge directory %s: %s", agent.knowledge_path, e)
     return agent
 
 
@@ -66,8 +85,8 @@ def update_knowledge_agent(
     agent = session.get(KnowledgeAgent, agent_id)
     if not agent:
         raise HTTPException(404, "Knowledge agent not found")
-    for field, value in data.model_dump(exclude_none=True).items():
-        setattr(agent, field, value)
+    for field_name, value in data.model_dump(exclude_none=True).items():
+        setattr(agent, field_name, value)
     agent.updated_at = datetime.utcnow()
     session.add(agent)
     session.commit()
@@ -84,31 +103,106 @@ def delete_knowledge_agent(agent_id: str, session: SessionDep) -> None:
     session.commit()
 
 
-@router.get("/{agent_id}/document")
-def export_knowledge_doc(agent_id: str, session: SessionDep) -> Response:
+# ---------------------------------------------------------------------------
+# File browser endpoints
+# ---------------------------------------------------------------------------
+
+def _resolve_safe(base: Path, rel: str) -> Path:
+    """Resolve rel path inside base, raising 400 on traversal attempts."""
+    target = (base / rel).resolve()
+    if not str(target).startswith(str(base.resolve())):
+        raise HTTPException(400, "Invalid path")
+    return target
+
+
+def _is_text(path: Path) -> bool:
+    return path.suffix.lower() in _TEXT_EXTENSIONS or path.suffix == ""
+
+
+class FileEntry(BaseModel):
+    path: str          # relative to knowledge_path
+    is_dir: bool
+    size: int | None   # None for directories
+    modified: float    # Unix timestamp
+
+
+@router.get("/{agent_id}/files")
+def list_knowledge_files(agent_id: str, session: SessionDep) -> list[FileEntry]:
     agent = session.get(KnowledgeAgent, agent_id)
     if not agent:
         raise HTTPException(404, "Knowledge agent not found")
-    return Response(
-        content=agent.knowledge_doc or "",
-        media_type="text/markdown; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{agent_id}.md"'},
-    )
+    base = Path(agent.knowledge_path)
+    if not base.exists():
+        return []
+
+    entries: list[FileEntry] = []
+    for entry in sorted(base.rglob("*"), key=lambda p: str(p)):
+        # Skip noise directories
+        if any(part in _SKIP_DIRS or part.startswith(".") for part in entry.relative_to(base).parts):
+            continue
+        rel = str(entry.relative_to(base))
+        stat = entry.stat()
+        entries.append(FileEntry(
+            path=rel,
+            is_dir=entry.is_dir(),
+            size=stat.st_size if entry.is_file() else None,
+            modified=stat.st_mtime,
+        ))
+    return entries
 
 
-@router.put("/{agent_id}/document", status_code=200)
-async def import_knowledge_doc(agent_id: str, request: Request, session: SessionDep) -> KnowledgeAgent:
+@router.get("/{agent_id}/files/{file_path:path}")
+def get_knowledge_file(agent_id: str, file_path: str, session: SessionDep) -> Response:
     agent = session.get(KnowledgeAgent, agent_id)
     if not agent:
         raise HTTPException(404, "Knowledge agent not found")
-    raw = await request.body()
-    agent.knowledge_doc = raw.decode("utf-8")
+    base = Path(agent.knowledge_path)
+    target = _resolve_safe(base, file_path)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(404, "File not found")
+    if not _is_text(target):
+        raise HTTPException(415, "Binary files are not supported in the editor")
+    return Response(content=target.read_text(encoding="utf-8"), media_type="text/plain; charset=utf-8")
+
+
+@router.put("/{agent_id}/files/{file_path:path}", status_code=200)
+async def update_knowledge_file(
+    agent_id: str, file_path: str, request: Request, session: SessionDep
+) -> FileEntry:
+    agent = session.get(KnowledgeAgent, agent_id)
+    if not agent:
+        raise HTTPException(404, "Knowledge agent not found")
+    base = Path(agent.knowledge_path)
+    target = _resolve_safe(base, file_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    content = (await request.body()).decode("utf-8")
+    target.write_text(content, encoding="utf-8")
     agent.updated_at = datetime.utcnow()
     session.add(agent)
     session.commit()
-    session.refresh(agent)
-    return agent
+    stat = target.stat()
+    return FileEntry(path=file_path, is_dir=False, size=stat.st_size, modified=stat.st_mtime)
 
+
+@router.delete("/{agent_id}/files/{file_path:path}", status_code=204)
+def delete_knowledge_file(agent_id: str, file_path: str, session: SessionDep) -> None:
+    agent = session.get(KnowledgeAgent, agent_id)
+    if not agent:
+        raise HTTPException(404, "Knowledge agent not found")
+    base = Path(agent.knowledge_path)
+    target = _resolve_safe(base, file_path)
+    if not target.exists():
+        raise HTTPException(404, "File not found")
+    if target.is_dir():
+        import shutil
+        shutil.rmtree(target)
+    else:
+        target.unlink()
+
+
+# ---------------------------------------------------------------------------
+# Query (launch a run)
+# ---------------------------------------------------------------------------
 
 class KnowledgeQuery(BaseModel):
     user_message: str

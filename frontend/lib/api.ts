@@ -78,11 +78,18 @@ export interface KnowledgeAgent {
   name: string;
   description: string;
   system_prompt: string;
-  knowledge_doc: string;
+  knowledge_path: string;
   model: string;
   tools: string[];
   created_at: string;
   updated_at: string;
+}
+
+export interface KnowledgeFile {
+  path: string;
+  is_dir: boolean;
+  size: number | null;
+  modified: number;
 }
 
 export interface KnowledgeTool {
@@ -179,14 +186,21 @@ export const api = {
       apiFetch<KnowledgeAgent>(`/api/knowledge-agents/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (id: string) =>
       apiFetch<void>(`/api/knowledge-agents/${id}`, { method: "DELETE" }),
-    exportDoc: (id: string) =>
-      fetch(`${BASE_URL}/api/knowledge-agents/${id}/document`, { credentials: "include" }),
-    importDoc: (id: string, markdown: string) =>
-      apiFetch<KnowledgeAgent>(`/api/knowledge-agents/${id}/document`, {
-        method: "PUT",
-        body: markdown,
-        headers: { "Content-Type": "text/markdown" },
-      }),
+    files: {
+      list: (id: string) =>
+        apiFetch<KnowledgeFile[]>(`/api/knowledge-agents/${id}/files`),
+      get: (id: string, path: string) =>
+        fetch(`${BASE_URL}/api/knowledge-agents/${id}/files/${path}`, { credentials: "include" })
+          .then((r) => { if (!r.ok) throw new Error(`API error ${r.status}`); return r.text(); }),
+      update: (id: string, path: string, content: string) =>
+        apiFetch<KnowledgeFile>(`/api/knowledge-agents/${id}/files/${path}`, {
+          method: "PUT",
+          body: content,
+          headers: { "Content-Type": "text/plain" },
+        }),
+      delete: (id: string, path: string) =>
+        apiFetch<void>(`/api/knowledge-agents/${id}/files/${path}`, { method: "DELETE" }),
+    },
     query: (id: string, userMessage: string, resumeSessionId?: string, conversationId?: string, tools?: string[]) =>
       apiFetch<{ run_id: string }>(`/api/knowledge-agents/${id}/query`, {
         method: "POST",

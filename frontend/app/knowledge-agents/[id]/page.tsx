@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { api, KnowledgeAgent, Run, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
+import { api, KnowledgeAgent, KnowledgeFile, Run, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
 
-type View = "chat" | "document" | "conversations" | "config";
+type View = "chat" | "archivos" | "conversations" | "config";
 
 interface ConversationSummary {
   convId: string;
@@ -30,8 +30,75 @@ interface ChatMessage {
   run_id?: string;
   status?: Run["status"];
   tokens?: number;
-  docUpdated?: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// File browser helpers
+// ---------------------------------------------------------------------------
+
+function FileTree({
+  files,
+  selected,
+  onSelect,
+}: {
+  files: KnowledgeFile[];
+  selected: string | null;
+  onSelect: (path: string) => void;
+}) {
+  const renderEntries = (parentPath: string, depth: number): React.ReactNode => {
+    const entries = files.filter((f) => {
+      const parts = f.path.split("/");
+      const parent = parts.slice(0, -1).join("/");
+      return parent === parentPath;
+    });
+    entries.sort((a, b) => {
+      if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+      return a.path.localeCompare(b.path);
+    });
+    return entries.map((f) => {
+      const name = f.path.split("/").at(-1)!;
+      const indent = depth * 12;
+      if (f.is_dir) {
+        return (
+          <div key={f.path}>
+            <div
+              className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono text-zinc-600"
+              style={{ paddingLeft: `${8 + indent}px` }}
+            >
+              <span>▸</span>
+              <span>{name}/</span>
+            </div>
+            {renderEntries(f.path, depth + 1)}
+          </div>
+        );
+      }
+      return (
+        <button
+          key={f.path}
+          onClick={() => onSelect(f.path)}
+          className={`w-full flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono text-left transition-colors rounded ${
+            selected === f.path
+              ? "bg-amber-400/10 text-amber-300"
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]"
+          }`}
+          style={{ paddingLeft: `${8 + indent}px` }}
+        >
+          <span className="text-zinc-700">·</span>
+          <span className="truncate">{name}</span>
+          {f.size != null && (
+            <span className="ml-auto text-zinc-800 shrink-0">{f.size < 1024 ? `${f.size}b` : `${(f.size / 1024).toFixed(1)}k`}</span>
+          )}
+        </button>
+      );
+    });
+  };
+
+  return <div className="space-y-0">{renderEntries("", 0)}</div>;
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
 
 export default function KnowledgeAgentDetail() {
   const { id } = useParams<{ id: string }>();
@@ -40,19 +107,33 @@ export default function KnowledgeAgentDetail() {
   const [agent, setAgent] = useState<KnowledgeAgent | null>(null);
   const [view, setView] = useState<View>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  // conversationId: stable UUID that identifies this chat thread, lives in ?conv= URL param
   const [conversationId, setConversationId] = useState<string | null>(searchParams.get("conv"));
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  // latestSessionId: Claude CLI session_id for --resume, updated after each run, NOT in URL
   const [latestSessionId, setLatestSessionId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [docEdit, setDocEdit] = useState("");
-  const [savingDoc, setSavingDoc] = useState(false);
-  const [configForm, setConfigForm] = useState({ name: "", description: "", model: "", system_prompt: "", tools: [] as string[] });
+
+  // File browser state
+  const [files, setFiles] = useState<KnowledgeFile[]>([]);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [fileContent, setFileContent] = useState("");
+  const [editingContent, setEditingContent] = useState("");
+  const [loadingFile, setLoadingFile] = useState(false);
+  const [savingFile, setSavingFile] = useState(false);
+  const [deletingFile, setDeletingFile] = useState(false);
+  const [newFilePath, setNewFilePath] = useState("");
+  const [showNewFile, setShowNewFile] = useState(false);
+
+  // Config state
+  const [configForm, setConfigForm] = useState({
+    name: "", description: "", model: "", system_prompt: "", knowledge_path: "", tools: [] as string[],
+  });
   const [savingConfig, setSavingConfig] = useState(false);
   const [savedConfig, setSavedConfig] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Tools state
   const [chatTools, setChatTools] = useState<string[]>([]);
   const [savingDefaultTools, setSavingDefaultTools] = useState(false);
   const [savedDefaultTools, setSavedDefaultTools] = useState(false);
@@ -72,9 +153,72 @@ export default function KnowledgeAgentDetail() {
   const loadAgent = async () => {
     const a = await api.knowledgeAgents.get(id);
     setAgent(a);
-    setDocEdit(a.knowledge_doc);
-    setConfigForm({ name: a.name, description: a.description, model: a.model, system_prompt: a.system_prompt, tools: a.tools ?? ["Read", "Write"] });
+    setConfigForm({
+      name: a.name, description: a.description, model: a.model,
+      system_prompt: a.system_prompt, knowledge_path: a.knowledge_path,
+      tools: a.tools ?? ["Read", "Write"],
+    });
     setChatTools(a.tools ?? ["Read", "Write"]);
+  };
+
+  const loadFiles = useCallback(async () => {
+    setLoadingFiles(true);
+    try {
+      const list = await api.knowledgeAgents.files.list(id);
+      setFiles(list);
+    } finally {
+      setLoadingFiles(false);
+    }
+  }, [id]);
+
+  const selectFile = async (path: string) => {
+    setSelectedFile(path);
+    setLoadingFile(true);
+    try {
+      const content = await api.knowledgeAgents.files.get(id, path);
+      setFileContent(content);
+      setEditingContent(content);
+    } catch {
+      setFileContent("");
+      setEditingContent("");
+    } finally {
+      setLoadingFile(false);
+    }
+  };
+
+  const saveFile = async () => {
+    if (!selectedFile) return;
+    setSavingFile(true);
+    try {
+      await api.knowledgeAgents.files.update(id, selectedFile, editingContent);
+      setFileContent(editingContent);
+      await loadFiles();
+    } finally {
+      setSavingFile(false);
+    }
+  };
+
+  const deleteFile = async () => {
+    if (!selectedFile || !confirm(`¿Eliminar "${selectedFile}"?`)) return;
+    setDeletingFile(true);
+    try {
+      await api.knowledgeAgents.files.delete(id, selectedFile);
+      setSelectedFile(null);
+      setFileContent("");
+      setEditingContent("");
+      await loadFiles();
+    } finally {
+      setDeletingFile(false);
+    }
+  };
+
+  const createFile = async () => {
+    if (!newFilePath.trim()) return;
+    await api.knowledgeAgents.files.update(id, newFilePath.trim(), "");
+    setShowNewFile(false);
+    setNewFilePath("");
+    await loadFiles();
+    selectFile(newFilePath.trim());
   };
 
   const loadConversationHistory = async (convId: string) => {
@@ -85,8 +229,7 @@ export default function KnowledgeAgentDetail() {
 
     const msgs: ChatMessage[] = [];
     for (const run of convRuns) {
-      const userMsg = (run.input_params as Record<string, string>).user_message ?? "";
-      msgs.push({ role: "user", content: userMsg });
+      msgs.push({ role: "user", content: (run.input_params as Record<string, string>).user_message ?? "" });
       msgs.push({
         role: "assistant",
         content: run.status === "success" ? (run.output ?? "") : (run.error ?? "Error desconocido"),
@@ -96,8 +239,6 @@ export default function KnowledgeAgentDetail() {
       });
     }
     setMessages(msgs);
-
-    // Restore the latest Claude session_id for --resume
     const lastWithSession = [...convRuns].reverse().find((r) => r.session_id);
     if (lastWithSession?.session_id) setLatestSessionId(lastWithSession.session_id);
   };
@@ -114,10 +255,9 @@ export default function KnowledgeAgentDetail() {
     const summaries: ConversationSummary[] = [];
     for (const [convId, runs] of groups) {
       const sorted = runs.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-      const firstMsg = (sorted[0].input_params as Record<string, string>).user_message ?? "";
       summaries.push({
         convId,
-        firstMessage: firstMsg,
+        firstMessage: (sorted[0].input_params as Record<string, string>).user_message ?? "",
         msgCount: sorted.length,
         lastAt: sorted[sorted.length - 1].created_at,
       });
@@ -131,6 +271,10 @@ export default function KnowledgeAgentDetail() {
     loadAgent();
     if (initialConv.current) loadConversationHistory(initialConv.current);
   }, [id]);
+
+  useEffect(() => {
+    if (view === "archivos") loadFiles();
+  }, [view, loadFiles]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -152,7 +296,6 @@ export default function KnowledgeAgentDetail() {
     setInput("");
     setSending(true);
 
-    // Generate conversation_id on first message
     let convId = conversationId;
     if (!convId) {
       convId = crypto.randomUUID();
@@ -165,18 +308,11 @@ export default function KnowledgeAgentDetail() {
     try {
       const agentDefaultTools = agent?.tools ?? ["Read", "Write"];
       const toolsOverride =
-        chatTools.length !== agentDefaultTools.length ||
-        chatTools.some((t) => !agentDefaultTools.includes(t))
+        chatTools.length !== agentDefaultTools.length || chatTools.some((t) => !agentDefaultTools.includes(t))
           ? chatTools
           : undefined;
 
-      const { run_id } = await api.knowledgeAgents.query(
-        id,
-        userMsg,
-        latestSessionId ?? undefined,
-        convId,
-        toolsOverride,
-      );
+      const { run_id } = await api.knowledgeAgents.query(id, userMsg, latestSessionId ?? undefined, convId, toolsOverride);
 
       const poll = async () => {
         const run = await api.runs.get(run_id);
@@ -184,16 +320,7 @@ export default function KnowledgeAgentDetail() {
           setTimeout(poll, 1500);
           return;
         }
-
-        const updatedAgent = await api.knowledgeAgents.get(id);
-        const docUpdated = updatedAgent.knowledge_doc !== agent?.knowledge_doc;
-        if (docUpdated) {
-          setAgent(updatedAgent);
-          setDocEdit(updatedAgent.knowledge_doc);
-        }
-
         if (run.session_id) setLatestSessionId(run.session_id);
-
         setMessages((m) => {
           const updated = [...m];
           const last = updated[updated.length - 1];
@@ -204,14 +331,12 @@ export default function KnowledgeAgentDetail() {
               run_id,
               status: run.status,
               tokens: (run.tokens_input ?? 0) + (run.tokens_output ?? 0),
-              docUpdated,
             };
           }
           return updated;
         });
         setSending(false);
       };
-
       poll();
     } catch (err) {
       setMessages((m) => {
@@ -229,9 +354,7 @@ export default function KnowledgeAgentDetail() {
 
   const toggleChatTool = (name: string) => {
     if (name === "Read") return;
-    setChatTools((prev) =>
-      prev.includes(name) ? prev.filter((t) => t !== name) : [...prev, name]
-    );
+    setChatTools((prev) => prev.includes(name) ? prev.filter((t) => t !== name) : [...prev, name]);
   };
 
   const saveDefaultTools = async () => {
@@ -246,28 +369,6 @@ export default function KnowledgeAgentDetail() {
     } finally {
       setSavingDefaultTools(false);
     }
-  };
-
-  const saveDoc = async () => {
-    if (!agent) return;
-    setSavingDoc(true);
-    try {
-      const updated = await api.knowledgeAgents.importDoc(id, docEdit);
-      setAgent(updated);
-    } finally {
-      setSavingDoc(false);
-    }
-  };
-
-  const exportDoc = async () => {
-    if (!agent) return;
-    const res = await api.knowledgeAgents.exportDoc(id);
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${id}.md`;
-    a.click();
   };
 
   const saveConfig = async (e: React.SyntheticEvent) => {
@@ -303,8 +404,11 @@ export default function KnowledgeAgentDetail() {
     configForm.description !== agent.description ||
     configForm.model !== agent.model ||
     configForm.system_prompt !== agent.system_prompt ||
+    configForm.knowledge_path !== agent.knowledge_path ||
     configForm.tools.length !== agentTools.length ||
     configForm.tools.some((t) => !agentTools.includes(t));
+
+  const fileDirty = editingContent !== fileContent;
 
   return (
     <div className="flex flex-col h-[calc(100dvh-120px)] gap-4">
@@ -321,52 +425,29 @@ export default function KnowledgeAgentDetail() {
           )}
         </div>
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => setView("chat")}
-            className={`px-2.5 py-1 rounded-md text-xs font-mono transition-colors ${
-              view === "chat" ? "bg-white/[0.08] text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
-            }`}
-          >
-            chat
-          </button>
-          <button
-            onClick={() => setView("document")}
-            className={`px-2.5 py-1 rounded-md text-xs font-mono transition-colors ${
-              view === "document" ? "bg-white/[0.08] text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
-            }`}
-          >
-            documento {agent.knowledge_doc ? `(${(agent.knowledge_doc.length / 1000).toFixed(1)}k)` : "(vacío)"}
-          </button>
-          <button
-            onClick={() => { setView("conversations"); loadConversations(); }}
-            className={`px-2.5 py-1 rounded-md text-xs font-mono transition-colors ${
-              view === "conversations" ? "bg-white/[0.08] text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
-            }`}
-          >
-            conversaciones
-          </button>
-          <button
-            onClick={() => setView("config")}
-            className={`px-2.5 py-1 rounded-md text-xs font-mono transition-colors ${
-              view === "config" ? "bg-white/[0.08] text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
-            }`}
-          >
-            config
-          </button>
+          {(["chat", "archivos", "conversations", "config"] as View[]).map((v) => (
+            <button
+              key={v}
+              onClick={() => { setView(v); if (v === "conversations") loadConversations(); }}
+              className={`px-2.5 py-1 rounded-md text-xs font-mono transition-colors ${
+                view === v ? "bg-white/[0.08] text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Chat view */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Chat view                                                            */}
+      {/* ------------------------------------------------------------------ */}
       {view === "chat" && (
         <>
-          {/* Session + tools bar */}
           <div className="shrink-0 flex items-center justify-between px-1">
             {/* Tools popover */}
             <div className="relative" ref={toolsMenuRef}>
-              <button
-                onClick={() => setShowToolsMenu((v) => !v)}
-                className="flex items-center gap-1.5 group"
-              >
+              <button onClick={() => setShowToolsMenu((v) => !v)} className="flex items-center gap-1.5 group">
                 <span className="text-[11px] font-mono text-zinc-800">tools:</span>
                 <span className="text-[11px] font-mono text-sky-800">Read</span>
                 {(() => {
@@ -417,44 +498,30 @@ export default function KnowledgeAgentDetail() {
                       </div>
                     );
                   })}
-                  {/* Save as default */}
                   <div className="pt-3 mt-1 border-t border-white/[0.06] space-y-2.5">
-                    <p className="text-[11px] font-mono text-zinc-700">
-                      cambios solo para esta conversación
-                    </p>
+                    <p className="text-[11px] font-mono text-zinc-700">cambios solo para esta conversación</p>
                     <div className="flex items-center justify-between">
                       {(chatTools.length !== agentTools.length || chatTools.some((t) => !agentTools.includes(t))) ? (
-                        <button
-                          onClick={() => setChatTools(agentTools)}
-                          className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors"
-                        >
+                        <button onClick={() => setChatTools(agentTools)} className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors">
                           ↺ restaurar defecto
                         </button>
-                      ) : (
-                        <span />
-                      )}
+                      ) : <span />}
                       <button
                         onClick={saveDefaultTools}
-                        disabled={savingDefaultTools || savedDefaultTools || (
-                          chatTools.length === agentTools.length &&
-                          chatTools.every((t) => agentTools.includes(t))
-                        )}
+                        disabled={savingDefaultTools || savedDefaultTools || (chatTools.length === agentTools.length && chatTools.every((t) => agentTools.includes(t)))}
                         className="text-[11px] font-mono text-amber-400/70 hover:text-amber-400 transition-colors disabled:opacity-40"
                       >
                         {savingDefaultTools ? "guardando···" : savedDefaultTools ? "guardado ✓" : "guardar como defecto →"}
                       </button>
                     </div>
                   </div>
-
                 </div>
               )}
             </div>
 
             <div className="flex items-center gap-3">
               {conversationId && (
-                <span className="text-[11px] font-mono text-zinc-800">
-                  conv {conversationId.slice(0, 8)}…
-                </span>
+                <span className="text-[11px] font-mono text-zinc-800">conv {conversationId.slice(0, 8)}…</span>
               )}
               <button
                 onClick={() => { setMessages([]); setLatestSessionId(null); setConversation(null); }}
@@ -469,26 +536,20 @@ export default function KnowledgeAgentDetail() {
           <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] p-4 space-y-4">
             {messages.length === 0 && (
               <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                  <p className="text-xs font-mono text-zinc-700">
-                    {conversationId
-                      ? `Retomando conversación ${conversationId.slice(0, 8)}… — escribe para continuar`
-                      : agent.knowledge_doc
-                        ? `Consulta a ${agent.name} — responderá con el contexto de su base de conocimiento`
-                        : "Este agente aún no tiene base de conocimiento. Ve al panel «documento» para añadirla."}
-                  </p>
-                </div>
+                <p className="text-xs font-mono text-zinc-700">
+                  {conversationId
+                    ? `Retomando conversación ${conversationId.slice(0, 8)}… — escribe para continuar`
+                    : `Consulta a ${agent.name} — responderá con el contexto de su base de conocimiento`}
+                </p>
               </div>
             )}
             {messages.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div
-                  className={`max-w-[80%] rounded-xl px-4 py-3 text-sm ${
-                    msg.role === "user"
-                      ? "bg-amber-400/10 border border-amber-400/15 text-zinc-200"
-                      : "bg-white/[0.03] border border-white/[0.06] text-zinc-300"
-                  }`}
-                >
+                <div className={`max-w-[80%] rounded-xl px-4 py-3 text-sm ${
+                  msg.role === "user"
+                    ? "bg-amber-400/10 border border-amber-400/15 text-zinc-200"
+                    : "bg-white/[0.03] border border-white/[0.06] text-zinc-300"
+                }`}>
                   {msg.status === "pending" || (msg.status === "running" && !msg.content) ? (
                     <span className="text-xs font-mono text-zinc-600 animate-pulse">procesando···</span>
                   ) : (
@@ -496,20 +557,10 @@ export default function KnowledgeAgentDetail() {
                       <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{msg.content}</pre>
                       {msg.role === "assistant" && (
                         <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/[0.04] text-[11px] font-mono text-zinc-700">
-                          {msg.status && (
-                            <span className={STATUS_TEXT[msg.status]}>{msg.status}</span>
-                          )}
-                          {msg.tokens && msg.tokens > 0 && (
-                            <span>{(msg.tokens / 1000).toFixed(1)}k tokens</span>
-                          )}
-                          {msg.docUpdated && (
-                            <span className="text-amber-400/60">↗ doc actualizado</span>
-                          )}
+                          {msg.status && <span className={STATUS_TEXT[msg.status]}>{msg.status}</span>}
+                          {msg.tokens != null && msg.tokens > 0 && <span>{(msg.tokens / 1000).toFixed(1)}k tokens</span>}
                           {msg.run_id && (
-                            <Link
-                              href={`/runs/${msg.run_id}`}
-                              className="hover:text-zinc-500 transition-colors"
-                            >
+                            <Link href={`/runs/${msg.run_id}`} className="hover:text-zinc-500 transition-colors">
                               ver run →
                             </Link>
                           )}
@@ -523,17 +574,11 @@ export default function KnowledgeAgentDetail() {
             <div ref={bottomRef} />
           </div>
 
-          {/* Input */}
           <div className="shrink-0 flex gap-2">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  sendMessage();
-                }
-              }}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
               placeholder="Escribe tu consulta… (Enter para enviar, Shift+Enter para nueva línea)"
               rows={2}
               disabled={sending}
@@ -550,7 +595,102 @@ export default function KnowledgeAgentDetail() {
         </>
       )}
 
-      {/* Conversations view */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Archivos view                                                        */}
+      {/* ------------------------------------------------------------------ */}
+      {view === "archivos" && (
+        <div className="flex-1 min-h-0 flex gap-3">
+          {/* File list */}
+          <div className="w-52 shrink-0 flex flex-col gap-2 min-h-0">
+            <div className="flex items-center justify-between shrink-0">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-700">
+                {agent.knowledge_path.replace(/^\/data\/knowledge\//, "~/")}
+              </span>
+              <button
+                onClick={() => setShowNewFile((v) => !v)}
+                className="text-[11px] font-mono text-zinc-600 hover:text-amber-400 transition-colors"
+                title="Nuevo fichero"
+              >
+                +
+              </button>
+            </div>
+            {showNewFile && (
+              <div className="flex gap-1 shrink-0">
+                <input
+                  value={newFilePath}
+                  onChange={(e) => setNewFilePath(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") createFile(); if (e.key === "Escape") setShowNewFile(false); }}
+                  placeholder="ruta/fichero.md"
+                  autoFocus
+                  className="flex-1 min-w-0 bg-zinc-900 border border-white/[0.06] rounded px-2 py-1 text-[11px] font-mono text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
+                />
+                <button onClick={createFile} className="text-[11px] font-mono text-amber-400 hover:text-amber-300 px-1">↵</button>
+              </div>
+            )}
+            <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-white/[0.04] py-1">
+              {loadingFiles ? (
+                <p className="text-[11px] font-mono text-zinc-700 px-2 py-1">cargando…</p>
+              ) : files.length === 0 ? (
+                <p className="text-[11px] font-mono text-zinc-700 px-2 py-1">sin ficheros</p>
+              ) : (
+                <FileTree files={files} selected={selectedFile} onSelect={selectFile} />
+              )}
+            </div>
+            <button
+              onClick={loadFiles}
+              className="shrink-0 text-[11px] font-mono text-zinc-700 hover:text-zinc-500 transition-colors text-left"
+            >
+              ↺ actualizar
+            </button>
+          </div>
+
+          {/* Editor */}
+          <div className="flex-1 min-w-0 flex flex-col gap-2 min-h-0">
+            {selectedFile ? (
+              <>
+                <div className="flex items-center justify-between shrink-0">
+                  <span className="text-[11px] font-mono text-zinc-500">{selectedFile}</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={deleteFile}
+                      disabled={deletingFile}
+                      className="text-[11px] font-mono text-red-500/50 hover:text-red-400 transition-colors disabled:opacity-30"
+                    >
+                      {deletingFile ? "eliminando···" : "eliminar"}
+                    </button>
+                    <button
+                      onClick={saveFile}
+                      disabled={savingFile || !fileDirty}
+                      className="text-xs font-mono text-amber-400 hover:text-amber-300 px-3 py-1 border border-amber-400/20 hover:border-amber-400/40 rounded-md transition-all disabled:opacity-30"
+                    >
+                      {savingFile ? "guardando···" : "guardar"}
+                    </button>
+                  </div>
+                </div>
+                {loadingFile ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <span className="text-xs font-mono text-zinc-600 animate-pulse">cargando…</span>
+                  </div>
+                ) : (
+                  <textarea
+                    value={editingContent}
+                    onChange={(e) => setEditingContent(e.target.value)}
+                    className="flex-1 min-h-0 bg-zinc-900 border border-white/[0.06] rounded-xl px-4 py-4 text-sm text-zinc-300 font-mono leading-relaxed focus:outline-none focus:border-amber-400/20 resize-none"
+                  />
+                )}
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center">
+                <p className="text-xs font-mono text-zinc-700">selecciona un fichero para editarlo</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Conversations view                                                   */}
+      {/* ------------------------------------------------------------------ */}
       {view === "conversations" && (
         <div className="flex-1 min-h-0 overflow-y-auto space-y-1">
           {conversations.length === 0 ? (
@@ -567,13 +707,7 @@ export default function KnowledgeAgentDetail() {
                   </p>
                 </div>
                 <button
-                  onClick={() => {
-                    setMessages([]);
-                    setLatestSessionId(null);
-                    setConversation(conv.convId);
-                    loadConversationHistory(conv.convId);
-                    setView("chat");
-                  }}
+                  onClick={() => { setMessages([]); setLatestSessionId(null); setConversation(conv.convId); loadConversationHistory(conv.convId); setView("chat"); }}
                   className="text-xs font-mono text-zinc-600 hover:text-amber-400 transition-colors shrink-0"
                 >
                   retomar →
@@ -584,46 +718,13 @@ export default function KnowledgeAgentDetail() {
         </div>
       )}
 
-      {/* Document view */}
-      {view === "document" && (
-        <div className="flex-1 min-h-0 flex flex-col gap-3">
-          <div className="flex items-center justify-between shrink-0">
-            <span className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">
-              {agent.knowledge_doc
-                ? `${(agent.knowledge_doc.length / 1000).toFixed(1)}k chars · actualizado ${asUTC(agent.updated_at).toLocaleDateString("es-ES")}`
-                : "documento vacío"}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={exportDoc}
-                className="text-xs font-mono text-zinc-600 hover:text-zinc-400 transition-colors px-2 py-1"
-              >
-                exportar .md
-              </button>
-              <button
-                onClick={saveDoc}
-                disabled={savingDoc || docEdit === agent.knowledge_doc}
-                className="text-xs font-mono text-amber-400 hover:text-amber-300 px-3 py-1 border border-amber-400/20 hover:border-amber-400/40 rounded-md transition-all disabled:opacity-30"
-              >
-                {savingDoc ? "guardando···" : "guardar"}
-              </button>
-            </div>
-          </div>
-          <textarea
-            value={docEdit}
-            onChange={(e) => setDocEdit(e.target.value)}
-            placeholder="# Base de conocimiento\n\nEscribe aquí el documento en Markdown…"
-            className="flex-1 min-h-0 bg-zinc-900 border border-white/[0.06] rounded-xl px-4 py-4 text-sm text-zinc-300 font-mono leading-relaxed focus:outline-none focus:border-amber-400/20 resize-none placeholder-zinc-800"
-          />
-        </div>
-      )}
-
-      {/* Config view */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Config view                                                          */}
+      {/* ------------------------------------------------------------------ */}
       {view === "config" && (
         <div className="flex-1 min-h-0 overflow-y-auto">
           <form onSubmit={saveConfig} className="flex flex-col gap-5">
             <div className="flex flex-col lg:flex-row gap-8">
-              {/* Left: form fields */}
               <div className="flex-1 min-w-0 space-y-5">
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Nombre</label>
@@ -641,6 +742,17 @@ export default function KnowledgeAgentDetail() {
                     onChange={(e) => setConfigForm((f) => ({ ...f, description: e.target.value }))}
                     className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
                   />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Ruta de conocimiento</label>
+                  <input
+                    value={configForm.knowledge_path}
+                    onChange={(e) => setConfigForm((f) => ({ ...f, knowledge_path: e.target.value }))}
+                    className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-200 font-mono placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
+                  />
+                  <p className="text-[11px] text-zinc-700">
+                    Ruta dentro del contenedor. Cambia solo si quieres apuntar a un volumen externo.
+                  </p>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Modelo</label>
@@ -666,7 +778,6 @@ export default function KnowledgeAgentDetail() {
                 </div>
               </div>
 
-              {/* Right (mobile: after system prompt): tools */}
               <div className="lg:w-72 shrink-0 space-y-3">
                 <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Tools</label>
                 {KNOWLEDGE_TOOL_GROUPS.map(({ key, label }) => {
@@ -686,9 +797,7 @@ export default function KnowledgeAgentDetail() {
                                 if (always) return;
                                 setConfigForm((f) => ({
                                   ...f,
-                                  tools: f.tools.includes(name)
-                                    ? f.tools.filter((t) => t !== name)
-                                    : [...f.tools, name],
+                                  tools: f.tools.includes(name) ? f.tools.filter((t) => t !== name) : [...f.tools, name],
                                 }));
                               }}
                               disabled={always}
@@ -713,7 +822,6 @@ export default function KnowledgeAgentDetail() {
               </div>
             </div>
 
-            {/* Actions — full width below both columns */}
             <div className="flex items-center justify-between pt-1">
               <button
                 type="button"
