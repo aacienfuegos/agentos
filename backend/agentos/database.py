@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 
 from sqlmodel import SQLModel, create_engine, Session
 from .config import settings
@@ -41,6 +42,24 @@ def _run_migrations() -> None:
             "WHERE knowledge_path = '' OR knowledge_path IS NULL"
         )
         conn.commit()
+        # Migrar knowledge_doc existente al filesystem (solo si el fichero no existe aún)
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(knowledge_agents)")}
+        if "knowledge_doc" in cols:
+            rows = conn.execute(
+                "SELECT id, knowledge_path, knowledge_doc FROM knowledge_agents "
+                "WHERE knowledge_doc IS NOT NULL AND knowledge_doc != ''"
+            ).fetchall()
+            for _, kpath, kdoc in rows:
+                if not kpath:
+                    continue
+                try:
+                    p = Path(kpath)
+                    p.mkdir(parents=True, exist_ok=True)
+                    stub = p / "knowledge.md"
+                    if not stub.exists():
+                        stub.write_text(kdoc, encoding="utf-8")
+                except OSError:
+                    pass
     except Exception:
         pass
     finally:
