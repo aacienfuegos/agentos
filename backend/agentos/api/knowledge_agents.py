@@ -131,6 +131,8 @@ def list_knowledge_files(agent_id: str, session: SessionDep) -> list[FileEntry]:
     agent = session.get(KnowledgeAgent, agent_id)
     if not agent:
         raise HTTPException(404, "Knowledge agent not found")
+    if not agent.knowledge_path:
+        return []
     base = Path(agent.knowledge_path)
     if not base.exists():
         return []
@@ -156,6 +158,8 @@ def get_knowledge_file(agent_id: str, file_path: str, session: SessionDep) -> Re
     agent = session.get(KnowledgeAgent, agent_id)
     if not agent:
         raise HTTPException(404, "Knowledge agent not found")
+    if not agent.knowledge_path:
+        raise HTTPException(404, "Knowledge agent has no knowledge_path configured")
     base = Path(agent.knowledge_path)
     target = _resolve_safe(base, file_path)
     if not target.exists() or not target.is_file():
@@ -172,6 +176,8 @@ async def update_knowledge_file(
     agent = session.get(KnowledgeAgent, agent_id)
     if not agent:
         raise HTTPException(404, "Knowledge agent not found")
+    if not agent.knowledge_path:
+        raise HTTPException(404, "Knowledge agent has no knowledge_path configured")
     base = Path(agent.knowledge_path)
     target = _resolve_safe(base, file_path)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -189,6 +195,8 @@ def delete_knowledge_file(agent_id: str, file_path: str, session: SessionDep) ->
     agent = session.get(KnowledgeAgent, agent_id)
     if not agent:
         raise HTTPException(404, "Knowledge agent not found")
+    if not agent.knowledge_path:
+        raise HTTPException(404, "Knowledge agent has no knowledge_path configured")
     base = Path(agent.knowledge_path)
     target = _resolve_safe(base, file_path)
     if not target.exists():

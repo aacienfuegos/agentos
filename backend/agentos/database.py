@@ -35,6 +35,12 @@ def _run_migrations() -> None:
             if column not in existing:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
                 conn.commit()
+        # Rellenar knowledge_path vacío en agentes existentes
+        conn.execute(
+            "UPDATE knowledge_agents SET knowledge_path = '/data/knowledge/' || id "
+            "WHERE knowledge_path = '' OR knowledge_path IS NULL"
+        )
+        conn.commit()
     except Exception:
         pass
     finally:
