@@ -200,6 +200,26 @@ export const api = {
         }),
       delete: (id: string, path: string) =>
         apiFetch<void>(`/api/knowledge-agents/${id}/files/${path}`, { method: "DELETE" }),
+      upload: async (id: string, files: File[]): Promise<{ written: string[]; errors: string[] }> => {
+        const formData = new FormData();
+        for (const file of files) {
+          // webkitRelativePath preserves folder structure when uploading a directory
+          const path = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+          formData.append("files", file, path);
+        }
+        const res = await fetch(`${BASE_URL}/api/knowledge-agents/${id}/upload`, {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+        if (res.status === 401) {
+          if (typeof window !== "undefined" && window.location.pathname !== "/login")
+            window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+          throw new Error("Unauthorized");
+        }
+        if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+        return res.json();
+      },
     },
     query: (id: string, userMessage: string, resumeSessionId?: string, conversationId?: string, tools?: string[]) =>
       apiFetch<{ run_id: string }>(`/api/knowledge-agents/${id}/query`, {

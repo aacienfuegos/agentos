@@ -187,3 +187,72 @@ def test_delete_file(app_client: TestClient, agent_with_dir):
 def test_delete_file_not_found(app_client: TestClient, agent_with_dir):
     response = app_client.delete("/api/knowledge-agents/homelab/files/nope.md")
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Upload endpoint
+# ---------------------------------------------------------------------------
+
+def test_upload_single_file(app_client: TestClient, agent_with_dir):
+    response = app_client.post(
+        "/api/knowledge-agents/homelab/upload",
+        files=[("files", ("nuevo.md", b"# Nuevo\n", "text/markdown"))],
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "nuevo.md" in data["written"]
+    assert data["errors"] == []
+    # Verify the file is accessible
+    assert "# Nuevo" in app_client.get("/api/knowledge-agents/homelab/files/nuevo.md").text
+
+
+def test_upload_multiple_files(app_client: TestClient, agent_with_dir):
+    response = app_client.post(
+        "/api/knowledge-agents/homelab/upload",
+        files=[
+            ("files", ("a.md", b"# A\n", "text/markdown")),
+            ("files", ("b.md", b"# B\n", "text/markdown")),
+        ],
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert set(data["written"]) == {"a.md", "b.md"}
+
+
+def test_upload_file_with_subdir(app_client: TestClient, agent_with_dir):
+    """Filename with path separator creates subdirectory (folder upload)."""
+    response = app_client.post(
+        "/api/knowledge-agents/homelab/upload",
+        files=[("files", ("subdir/doc.md", b"# Doc\n", "text/markdown"))],
+    )
+    assert response.status_code == 200
+    assert "subdir/doc.md" in response.json()["written"]
+
+
+def test_upload_zip(app_client: TestClient, agent_with_dir, tmp_path: Path):
+    import io, zipfile as zf
+    buf = io.BytesIO()
+    with zf.ZipFile(buf, "w") as z:
+        z.writestr("intro.md", "# Intro\n")
+        z.writestr("sub/detail.md", "# Detail\n")
+    buf.seek(0)
+    response = app_client.post(
+        "/api/knowledge-agents/homelab/upload",
+        files=[("files", ("docs.zip", buf.read(), "application/zip"))],
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "intro.md" in data["written"]
+    assert "sub/detail.md" in data["written"]
+    assert data["errors"] == []
+
+
+def test_upload_traversal_rejected(app_client: TestClient, agent_with_dir):
+    response = app_client.post(
+        "/api/knowledge-agents/homelab/upload",
+        files=[("files", ("../../etc/passwd", b"bad", "text/plain"))],
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["written"] == []
+    assert data["errors"]

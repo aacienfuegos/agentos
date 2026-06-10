@@ -124,6 +124,12 @@ export default function KnowledgeAgentDetail() {
   const [deletingFile, setDeletingFile] = useState(false);
   const [newFilePath, setNewFilePath] = useState("");
   const [showNewFile, setShowNewFile] = useState(false);
+  // Upload state
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<{ written: string[]; errors: string[] } | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   // Config state
   const [configForm, setConfigForm] = useState({
@@ -220,6 +226,32 @@ export default function KnowledgeAgentDetail() {
     await loadFiles();
     selectFile(newFilePath.trim());
   };
+
+  const handleUpload = useCallback(async (inputFiles: FileList | File[]) => {
+    const arr = Array.from(inputFiles);
+    if (!arr.length) return;
+    setUploading(true);
+    setUploadResult(null);
+    try {
+      const result = await api.knowledgeAgents.files.upload(id, arr);
+      setUploadResult(result);
+      await loadFiles();
+      // Auto-select first written file if nothing selected
+      if (!selectedFile && result.written.length > 0) {
+        selectFile(result.written[0]);
+      }
+    } catch (err) {
+      setUploadResult({ written: [], errors: [err instanceof Error ? err.message : "Error desconocido"] });
+    } finally {
+      setUploading(false);
+    }
+  }, [id, selectedFile, loadFiles]);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files);
+  }, [handleUpload]);
 
   const loadConversationHistory = async (convId: string) => {
     const allRuns = await api.runs.list({ agent_id: `knowledge:${id}`, limit: 200 });
@@ -599,93 +631,167 @@ export default function KnowledgeAgentDetail() {
       {/* Archivos view                                                        */}
       {/* ------------------------------------------------------------------ */}
       {view === "archivos" && (
-        <div className="flex-1 min-h-0 flex gap-3">
-          {/* File list */}
-          <div className="w-52 shrink-0 flex flex-col gap-2 min-h-0">
-            <div className="flex items-center justify-between shrink-0">
-              <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-700">
-                {agent.knowledge_path.replace(/^\/data\/knowledge\//, "~/")}
-              </span>
-              <button
-                onClick={() => setShowNewFile((v) => !v)}
-                className="text-[11px] font-mono text-zinc-600 hover:text-amber-400 transition-colors"
-                title="Nuevo fichero"
-              >
-                +
-              </button>
-            </div>
-            {showNewFile && (
-              <div className="flex gap-1 shrink-0">
-                <input
-                  value={newFilePath}
-                  onChange={(e) => setNewFilePath(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") createFile(); if (e.key === "Escape") setShowNewFile(false); }}
-                  placeholder="ruta/fichero.md"
-                  autoFocus
-                  className="flex-1 min-w-0 bg-zinc-900 border border-white/[0.06] rounded px-2 py-1 text-[11px] font-mono text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
-                />
-                <button onClick={createFile} className="text-[11px] font-mono text-amber-400 hover:text-amber-300 px-1">↵</button>
-              </div>
-            )}
-            <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-white/[0.04] py-1">
-              {loadingFiles ? (
-                <p className="text-[11px] font-mono text-zinc-700 px-2 py-1">cargando…</p>
-              ) : files.length === 0 ? (
-                <p className="text-[11px] font-mono text-zinc-700 px-2 py-1">sin ficheros</p>
-              ) : (
-                <FileTree files={files} selected={selectedFile} onSelect={selectFile} />
-              )}
-            </div>
-            <button
-              onClick={loadFiles}
-              className="shrink-0 text-[11px] font-mono text-zinc-700 hover:text-zinc-500 transition-colors text-left"
-            >
-              ↺ actualizar
-            </button>
-          </div>
+        <>
+          {/* Hidden file inputs */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => e.target.files && handleUpload(e.target.files)}
+          />
+          <input
+            ref={folderInputRef}
+            type="file"
+            // @ts-expect-error webkitdirectory is not in the standard types
+            webkitdirectory=""
+            multiple
+            className="hidden"
+            onChange={(e) => e.target.files && handleUpload(e.target.files)}
+          />
 
-          {/* Editor */}
-          <div className="flex-1 min-w-0 flex flex-col gap-2 min-h-0">
-            {selectedFile ? (
-              <>
-                <div className="flex items-center justify-between shrink-0">
-                  <span className="text-[11px] font-mono text-zinc-500">{selectedFile}</span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={deleteFile}
-                      disabled={deletingFile}
-                      className="text-[11px] font-mono text-red-500/50 hover:text-red-400 transition-colors disabled:opacity-30"
-                    >
-                      {deletingFile ? "eliminando···" : "eliminar"}
-                    </button>
-                    <button
-                      onClick={saveFile}
-                      disabled={savingFile || !fileDirty}
-                      className="text-xs font-mono text-amber-400 hover:text-amber-300 px-3 py-1 border border-amber-400/20 hover:border-amber-400/40 rounded-md transition-all disabled:opacity-30"
-                    >
-                      {savingFile ? "guardando···" : "guardar"}
-                    </button>
-                  </div>
+          <div
+            className={`flex-1 min-h-0 flex gap-3 transition-colors rounded-xl ${dragOver ? "ring-1 ring-amber-400/30 bg-amber-400/[0.02]" : ""}`}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+          >
+            {/* File list panel */}
+            <div className="w-52 shrink-0 flex flex-col gap-2 min-h-0">
+              <div className="flex items-center justify-between shrink-0">
+                <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-700 truncate" title={agent.knowledge_path}>
+                  {agent.knowledge_path.replace(/^\/data\/knowledge\//, "~/")}
+                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                  {/* Upload menu */}
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="text-[11px] font-mono text-zinc-600 hover:text-amber-400 transition-colors disabled:opacity-40"
+                    title="Subir ficheros o zip"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    onClick={() => folderInputRef.current?.click()}
+                    disabled={uploading}
+                    className="text-[11px] font-mono text-zinc-600 hover:text-amber-400 transition-colors disabled:opacity-40"
+                    title="Subir carpeta"
+                  >
+                    ⊞
+                  </button>
+                  <button
+                    onClick={() => setShowNewFile((v) => !v)}
+                    className="text-[11px] font-mono text-zinc-600 hover:text-amber-400 transition-colors"
+                    title="Nuevo fichero"
+                  >
+                    +
+                  </button>
                 </div>
-                {loadingFile ? (
-                  <div className="flex-1 flex items-center justify-center">
-                    <span className="text-xs font-mono text-zinc-600 animate-pulse">cargando…</span>
+              </div>
+
+              {showNewFile && (
+                <div className="flex gap-1 shrink-0">
+                  <input
+                    value={newFilePath}
+                    onChange={(e) => setNewFilePath(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") createFile(); if (e.key === "Escape") setShowNewFile(false); }}
+                    placeholder="ruta/fichero.md"
+                    autoFocus
+                    className="flex-1 min-w-0 bg-zinc-900 border border-white/[0.06] rounded px-2 py-1 text-[11px] font-mono text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
+                  />
+                  <button onClick={createFile} className="text-[11px] font-mono text-amber-400 hover:text-amber-300 px-1">↵</button>
+                </div>
+              )}
+
+              {/* Upload feedback */}
+              {uploading && (
+                <p className="text-[11px] font-mono text-amber-400/70 animate-pulse shrink-0">subiendo···</p>
+              )}
+              {uploadResult && !uploading && (
+                <div className="shrink-0 space-y-0.5">
+                  {uploadResult.written.length > 0 && (
+                    <p className="text-[11px] font-mono text-emerald-400/70">
+                      ✓ {uploadResult.written.length} fichero{uploadResult.written.length !== 1 ? "s" : ""}
+                    </p>
+                  )}
+                  {uploadResult.errors.map((e, i) => (
+                    <p key={i} className="text-[11px] font-mono text-red-400/70 truncate" title={e}>✗ {e}</p>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-white/[0.04] py-1">
+                {loadingFiles ? (
+                  <p className="text-[11px] font-mono text-zinc-700 px-2 py-1">cargando…</p>
+                ) : files.length === 0 ? (
+                  <div className="px-2 py-4 text-center space-y-1">
+                    <p className="text-[11px] font-mono text-zinc-700">sin ficheros</p>
+                    <p className="text-[10px] text-zinc-800">arrastra aquí o usa ↑</p>
                   </div>
                 ) : (
-                  <textarea
-                    value={editingContent}
-                    onChange={(e) => setEditingContent(e.target.value)}
-                    className="flex-1 min-h-0 bg-zinc-900 border border-white/[0.06] rounded-xl px-4 py-4 text-sm text-zinc-300 font-mono leading-relaxed focus:outline-none focus:border-amber-400/20 resize-none"
-                  />
+                  <FileTree files={files} selected={selectedFile} onSelect={selectFile} />
                 )}
-              </>
-            ) : (
-              <div className="flex-1 flex items-center justify-center">
-                <p className="text-xs font-mono text-zinc-700">selecciona un fichero para editarlo</p>
               </div>
-            )}
+
+              <button
+                onClick={loadFiles}
+                className="shrink-0 text-[11px] font-mono text-zinc-700 hover:text-zinc-500 transition-colors text-left"
+              >
+                ↺ actualizar
+              </button>
+            </div>
+
+            {/* Editor panel */}
+            <div className="flex-1 min-w-0 flex flex-col gap-2 min-h-0">
+              {selectedFile ? (
+                <>
+                  <div className="flex items-center justify-between shrink-0">
+                    <span className="text-[11px] font-mono text-zinc-500">{selectedFile}</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={deleteFile}
+                        disabled={deletingFile}
+                        className="text-[11px] font-mono text-red-500/50 hover:text-red-400 transition-colors disabled:opacity-30"
+                      >
+                        {deletingFile ? "eliminando···" : "eliminar"}
+                      </button>
+                      <button
+                        onClick={saveFile}
+                        disabled={savingFile || !fileDirty}
+                        className="text-xs font-mono text-amber-400 hover:text-amber-300 px-3 py-1 border border-amber-400/20 hover:border-amber-400/40 rounded-md transition-all disabled:opacity-30"
+                      >
+                        {savingFile ? "guardando···" : "guardar"}
+                      </button>
+                    </div>
+                  </div>
+                  {loadingFile ? (
+                    <div className="flex-1 flex items-center justify-center">
+                      <span className="text-xs font-mono text-zinc-600 animate-pulse">cargando…</span>
+                    </div>
+                  ) : (
+                    <textarea
+                      value={editingContent}
+                      onChange={(e) => setEditingContent(e.target.value)}
+                      className="flex-1 min-h-0 bg-zinc-900 border border-white/[0.06] rounded-xl px-4 py-4 text-sm text-zinc-300 font-mono leading-relaxed focus:outline-none focus:border-amber-400/20 resize-none"
+                    />
+                  )}
+                </>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center gap-3">
+                  {dragOver ? (
+                    <p className="text-xs font-mono text-amber-400/70">suelta para subir</p>
+                  ) : (
+                    <>
+                      <p className="text-xs font-mono text-zinc-700">selecciona un fichero para editarlo</p>
+                      <p className="text-[11px] font-mono text-zinc-800">o arrastra ficheros / carpetas / zip aquí</p>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* ------------------------------------------------------------------ */}

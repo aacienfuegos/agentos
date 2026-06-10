@@ -1,11 +1,13 @@
+import io
 import logging
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
 from arq import create_pool
 from arq.connections import RedisSettings
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -206,6 +208,89 @@ def delete_knowledge_file(agent_id: str, file_path: str, session: SessionDep) ->
         shutil.rmtree(target)
     else:
         target.unlink()
+
+
+@router.post("/{agent_id}/upload", status_code=200)
+async def upload_knowledge_files(
+    agent_id: str,
+    session: SessionDep,
+    files: list[UploadFile],
+    prefix: str = Form(default=""),
+) -> dict[str, Any]:
+    """Upload files to the knowledge directory.
+
+    Accepts any combination of:
+    - Regular files (written to knowledge_path/{prefix}/{filename})
+    - Files with path separators in the name (folder upload via webkitRelativePath)
+    - Zip archives (extracted automatically to knowledge_path/{prefix}/)
+    """
+    agent = session.get(KnowledgeAgent, agent_id)
+    if not agent:
+        raise HTTPException(404, "Knowledge agent not found")
+    if not agent.knowledge_path:
+        raise HTTPException(404, "Knowledge agent has no knowledge_path configured")
+
+    base = Path(agent.knowledge_path)
+    base.mkdir(parents=True, exist_ok=True)
+
+    written: list[str] = []
+    errors: list[str] = []
+
+    def safe_target(rel_str: str) -> Path | None:
+        try:
+            target = (base / rel_str).resolve()
+            if str(target).startswith(str(base.resolve())):
+                return target
+        except Exception:
+            pass
+        return None
+
+    for upload in files:
+        filename = upload.filename or "upload"
+        content = await upload.read()
+        is_zip = (
+            filename.lower().endswith(".zip")
+            or (upload.content_type or "").lower() in ("application/zip", "application/x-zip-compressed", "application/octet-stream")
+            and filename.lower().endswith(".zip")
+        )
+
+        if is_zip:
+            try:
+                with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                    for member in zf.namelist():
+                        # Skip macOS metadata and directory entries
+                        if "__MACOSX" in member or member.endswith("/"):
+                            continue
+                        rel = str(Path(prefix) / member) if prefix else member
+                        target = safe_target(rel)
+                        if target is None:
+                            errors.append(f"ruta inválida omitida: {member}")
+                            continue
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(zf.read(member))
+                        written.append(rel)
+            except zipfile.BadZipFile:
+                errors.append(f"{filename}: no es un zip válido")
+            except Exception as e:
+                errors.append(f"{filename}: {e}")
+        else:
+            rel = str(Path(prefix) / filename) if prefix else filename
+            target = safe_target(rel)
+            if target is None:
+                errors.append(f"ruta inválida omitida: {filename}")
+                continue
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+                written.append(rel)
+            except Exception as e:
+                errors.append(f"{filename}: {e}")
+
+    agent.updated_at = datetime.utcnow()
+    session.add(agent)
+    session.commit()
+
+    return {"written": written, "errors": errors}
 
 
 # ---------------------------------------------------------------------------
