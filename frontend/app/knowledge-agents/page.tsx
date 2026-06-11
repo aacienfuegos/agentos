@@ -15,7 +15,7 @@ const DEFAULT_TOOLS = ["Read", "Write"];
 export default function KnowledgeAgentsList() {
   const [agents, setAgents] = useState<KnowledgeAgent[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ id: "", name: "", description: "", model: "claude-sonnet-4-6", tools: DEFAULT_TOOLS });
+  const [form, setForm] = useState({ id: "", name: "", description: "", knowledge_path: "", model: "claude-sonnet-4-6", tools: DEFAULT_TOOLS });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
@@ -31,7 +31,7 @@ export default function KnowledgeAgentsList() {
     try {
       await api.knowledgeAgents.create(form);
       setShowForm(false);
-      setForm({ id: "", name: "", description: "", model: "claude-sonnet-4-6", tools: DEFAULT_TOOLS });
+      setForm({ id: "", name: "", description: "", knowledge_path: "", model: "claude-sonnet-4-6", tools: DEFAULT_TOOLS });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al crear agente");
@@ -97,6 +97,22 @@ export default function KnowledgeAgentsList() {
               placeholder="Documentación de mi infraestructura doméstica"
               className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
             />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">
+              Ruta de conocimiento{" "}
+              <span className="normal-case tracking-normal text-zinc-700">(vacío = auto-gestionada)</span>
+            </label>
+            <input
+              value={form.knowledge_path}
+              onChange={(e) => setForm((f) => ({ ...f, knowledge_path: e.target.value }))}
+              placeholder="/knowledge/homelab"
+              className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-200 font-mono placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
+            />
+            <p className="text-[11px] text-zinc-700">
+              Ruta dentro del contenedor. Déjalo vacío para usar <code className="font-mono">/data/knowledge/{"{id}"}</code>.
+              Para rutas externas monta el volumen en docker-compose.
+            </p>
           </div>
           <div className="space-y-1.5">
             <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Modelo</label>
@@ -188,7 +204,11 @@ export default function KnowledgeAgentsList() {
               )}
               <div className="flex items-center justify-between text-[11px] font-mono text-zinc-700">
                 <span>{agent.model.split("-").slice(-2).join("-")}</span>
-                <span>{agent.knowledge_doc ? `${(agent.knowledge_doc.length / 1000).toFixed(1)}k chars` : "sin doc"}</span>
+                <span className="truncate max-w-[140px] text-right" title={agent.knowledge_path}>
+                  {agent.knowledge_path
+                    ? agent.knowledge_path.replace(/^\/data\/knowledge\//, "~/")
+                    : "sin ruta"}
+                </span>
               </div>
               <div className="flex items-center gap-1.5 mt-2">
                 {(() => {
