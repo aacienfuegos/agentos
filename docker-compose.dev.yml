@@ -6,6 +6,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        UID: ${UID:-1000}
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -39,7 +41,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       args:
-        UID: ${UID:-1001}
+        UID: ${UID:-1000}
     restart: unless-stopped
     environment:
       - DATABASE_URL=sqlite:////data/agentos.db
@@ -56,6 +58,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${HOME}/.claude:/home/worker/.claude
       - ${HOME}/.claude.json:/home/worker/.claude.json
+      # Knowledge agents con rutas externas: monta aquí los directorios del host.
+      # Ejemplo: - ${HOME}/docu:/knowledge:rw
+      # Luego pon knowledge_path=/knowledge/homelab en la config del agente.
     depends_on:
       redis:
         condition: service_healthy

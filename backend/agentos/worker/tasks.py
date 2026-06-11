@@ -129,9 +129,8 @@ async def _run_knowledge(run: Run, ka: KnowledgeAgent) -> None:
             run.finished_at = datetime.utcnow()
             session.add(run)
             session.commit()
-        doc_note = " — doc actualizado" if result.knowledge_doc_updated else ""
         await send_notification(
-            title=f"✅ {ka.name} completado{doc_note}",
+            title=f"✅ {ka.name} completado",
             message=f"Tokens: {result.tokens_input + result.tokens_output}",
             priority="default",
         )
