@@ -6,6 +6,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        UID: ${UID:-1000}
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -39,7 +41,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       args:
-        UID: ${UID:-1001}
+        UID: ${UID:-1000}
     restart: unless-stopped
     environment:
       - DATABASE_URL=sqlite:////data/agentos.db
