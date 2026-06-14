@@ -166,7 +166,7 @@ en `log_entries`. Tokens y coste se extraen del evento `result` final.
 
 ## Estado actual del desarrollo
 
-**Última sesión activa:** 2026-06-14 — fix tokens (issue #102, PR #103/104)
+**Última sesión activa:** 2026-06-14 — dependabot npm + uv lock upgrade (PRs #94, #95, #105, #106)
 
 ### PRs abiertas (pendientes de merge en develop)
 
