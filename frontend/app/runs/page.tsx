@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { api, Run, Agent } from "@/lib/api";
+import { fmtTokens } from "@/lib/utils";
 
 const STATUS_DOT: Record<string, string> = {
   pending:   "bg-zinc-500",
@@ -184,7 +185,7 @@ export default function RunsList() {
                   <td className="px-4 py-3 text-zinc-600 font-mono text-xs">{dur(run)}</td>
                   <td className="px-4 py-3 text-zinc-600 font-mono text-xs hidden md:table-cell">
                     {run.tokens_input !== null && run.tokens_output !== null
-                      ? `${((run.tokens_input + run.tokens_output) / 1000).toFixed(1)}k`
+                      ? fmtTokens(run.tokens_input + run.tokens_output)
                       : "—"}
                   </td>
                   <td className="px-4 py-3 text-zinc-700 text-xs hidden lg:table-cell">{run.triggered_by}</td>

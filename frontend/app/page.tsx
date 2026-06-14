@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, Run, Agent, Stats, HealthStatus } from "@/lib/api";
+import { fmtTokens } from "@/lib/utils";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
 
@@ -140,7 +141,7 @@ export default function Dashboard() {
               {stats.tokens_this_month.total > 0 && (
                 <>
                   <span className="text-zinc-800">·</span>
-                  <span><span className="text-zinc-400">{(stats.tokens_this_month.total / 1000).toFixed(0)}k</span> tokens este mes</span>
+                  <span><span className="text-zinc-400">{fmtTokens(stats.tokens_this_month.total)}</span> tokens este mes</span>
                 </>
               )}
             </>
