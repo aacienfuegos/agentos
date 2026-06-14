@@ -93,6 +93,8 @@ class KnowledgeRunResult:
     output: str
     tokens_input: int = field(default=0)
     tokens_output: int = field(default=0)
+    tokens_cache_read: int = field(default=0)
+    tokens_cache_write: int = field(default=0)
     session_id: str | None = field(default=None)
 
 
@@ -141,5 +143,7 @@ class KnowledgeRunner:
             output=result.output,
             tokens_input=result.tokens_input,
             tokens_output=result.tokens_output,
+            tokens_cache_read=result.tokens_cache_read,
+            tokens_cache_write=result.tokens_cache_write,
             session_id=result.session_id,
         )

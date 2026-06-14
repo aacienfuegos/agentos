@@ -16,6 +16,8 @@ class RunResult:
     output: str
     tokens_input: int = field(default=0)
     tokens_output: int = field(default=0)
+    tokens_cache_read: int = field(default=0)
+    tokens_cache_write: int = field(default=0)
     session_id: str | None = field(default=None)
 
 
@@ -72,6 +74,8 @@ class ClaudeCodeRunner:
         output = ""
         tokens_input = 0
         tokens_output = 0
+        tokens_cache_read = 0
+        tokens_cache_write = 0
         session_id: str | None = None
 
         try:
@@ -92,8 +96,10 @@ class ClaudeCodeRunner:
                 if event.get("type") == "result":
                     output = event.get("result", "")
                     usage = event.get("usage", {})
-                    tokens_input = usage.get("input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
+                    tokens_input = usage.get("input_tokens", 0)
                     tokens_output = usage.get("output_tokens", 0)
+                    tokens_cache_read = usage.get("cache_read_input_tokens", 0)
+                    tokens_cache_write = usage.get("cache_write_input_tokens", 0)
                     session_id = event.get("session_id")
 
                 await self._handle_event(redis, run.id, event, output)
@@ -110,7 +116,14 @@ class ClaudeCodeRunner:
             if process.returncode is None:
                 process.terminate()
 
-        return RunResult(output=output, tokens_input=tokens_input, tokens_output=tokens_output, session_id=session_id)
+        return RunResult(
+            output=output,
+            tokens_input=tokens_input,
+            tokens_output=tokens_output,
+            tokens_cache_read=tokens_cache_read,
+            tokens_cache_write=tokens_cache_write,
+            session_id=session_id,
+        )
 
     async def _handle_event(
         self, redis: aioredis.Redis, run_id: str, event: dict, final_output: str
