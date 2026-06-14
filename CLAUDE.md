@@ -166,19 +166,15 @@ en `log_entries`. Tokens y coste se extraen del evento `result` final.
 
 ## Estado actual del desarrollo
 
-**Última sesión activa:** 2026-06-14 — logs en tiempo real en knowledge agents (issue #99, PR #100)
+**Última sesión activa:** 2026-06-14 — fix tokens (issue #102, PR #103/104)
 
 ### PRs abiertas (pendientes de merge en develop)
 
-Ninguna (todo mergeado a develop).
+Ninguna (todo mergeado a main).
 
-### Issues ya implementados (código existe, cerrar cuando se valide en producción)
+### Issues ya implementados
 
-- #14 APScheduler, #15 CRUD schedules, #16 Frontend schedules, #17 webhook GitHub — en producción
-- #19 ntfy notifications, #24 health indicator dashboard, #25 log retention, #26 redirect 401 — en producción
-- #18 stats tokens/coste (#57 mergeado), #21 filtros y paginación (#58), #23 tests YAML loader (#59) — en develop
-- #30 KnowledgeAgent model + CRUD (#60), #31 KnowledgeRunner (#61), #32 Knowledge UI (#62) — en develop
-- #99 Logs en tiempo real en el chat de knowledge agents (#100) — en develop
+Todos los issues de phase:core, phase:scheduler, phase:polish y phase:knowledge-1 están cerrados y en producción (main). Ver historial de issues cerrados en GitHub.
 
 ### Fases pendientes del roadmap
 
@@ -193,9 +189,11 @@ Ninguna (todo mergeado a develop).
 
 ### Notas de arquitectura (phase:knowledge-1)
 
-- `KnowledgeRunner` envuelve `ClaudeCodeRunner` (CLI claude, Claude Pro — sin coste extra de API). Crea un `AgentDefinition` proxy en memoria con el `knowledge_doc` inyectado en el system prompt. Para actualizaciones del doc, el agente escribe el fichero completo en `/tmp/knowledge_update_{run_id}.md` vía herramienta `Write`; el runner lo lee al terminar, persiste en SQLite y lo borra.
+- `KnowledgeRunner` envuelve `ClaudeCodeRunner` (CLI claude, Claude Pro — sin coste extra de API). Crea un `AgentDefinition` proxy en memoria con el `_build_system_prompt(ka)` inyectado (árbol de directorio). El agente trabaja directamente sobre su carpeta con herramientas nativas (Read, Write, Edit, Grep, LS).
+- El directorio de conocimiento es `ka.knowledge_path` (default: `/data/knowledge/{id}`). Se puede sobreescribir para apuntar a cualquier path accesible desde el contenedor.
 - Runs de knowledge agents tienen `agent_id = "knowledge:{id}"` — SQLite no fuerza FK por defecto, así que funciona sin cambiar el modelo `Run`.
-- `api.knowledgeAgents` en `frontend/lib/api.ts` cubre todo el CRUD + export/import + query.
+- `tokens_input` en `Run` almacena solo `input_tokens` reales (no cacheados). `tokens_cache_read` y `tokens_cache_write` se guardan por separado para diagnóstico.
+- `api.knowledgeAgents` en `frontend/lib/api.ts` cubre todo el CRUD + upload (files/folders/zips) + query.
 
 ### Notas de arquitectura (SSE / logs en tiempo real)
 
