@@ -17,6 +17,8 @@ _MIGRATIONS = [
     ("knowledge_agents", "write_access", "INTEGER NOT NULL DEFAULT 1"),
     ("knowledge_agents", "tools", 'TEXT DEFAULT \'["Read","Write"]\''),
     ("knowledge_agents", "knowledge_path", "TEXT NOT NULL DEFAULT ''"),
+    ("runs", "tokens_cache_read", "INTEGER"),
+    ("runs", "tokens_cache_write", "INTEGER"),
 ]
 
 

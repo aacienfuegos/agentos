@@ -70,6 +70,8 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
             run.output = result.output
             run.tokens_input = result.tokens_input
             run.tokens_output = result.tokens_output
+            run.tokens_cache_read = result.tokens_cache_read
+            run.tokens_cache_write = result.tokens_cache_write
             run.session_id = result.session_id
             run.finished_at = datetime.utcnow()
             session.add(run)
@@ -125,6 +127,8 @@ async def _run_knowledge(run: Run, ka: KnowledgeAgent) -> None:
             run.output = result.output
             run.tokens_input = result.tokens_input
             run.tokens_output = result.tokens_output
+            run.tokens_cache_read = result.tokens_cache_read
+            run.tokens_cache_write = result.tokens_cache_write
             run.session_id = result.session_id
             run.finished_at = datetime.utcnow()
             session.add(run)
