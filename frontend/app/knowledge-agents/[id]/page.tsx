@@ -338,7 +338,13 @@ export default function KnowledgeAgentDetail() {
   const finalizeRun = async (run_id: string) => {
     liveEsRef.current?.close();
     liveEsRef.current = null;
-    const run = await api.runs.get(run_id);
+    // The "done" SSE event is published before the worker persists the result
+    // to DB, so we poll briefly until the run reaches a terminal state.
+    let run = await api.runs.get(run_id);
+    while (run.status === "running" || run.status === "pending") {
+      await new Promise((r) => setTimeout(r, 300));
+      run = await api.runs.get(run_id);
+    }
     if (run.session_id) setLatestSessionId(run.session_id);
     setLiveLogs([]);
     setMessages((m) => {
