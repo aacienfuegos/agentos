@@ -51,7 +51,7 @@ export function LogStream({ runId, isLive, showInfo = false }: { runId: string; 
   useEffect(() => {
     if (!isLive) return;
 
-    const es = new EventSource(`${backendUrl}/api/runs/${runId}/stream`);
+    const es = new EventSource(`${backendUrl}/api/runs/${runId}/stream`, { withCredentials: true });
     setConnected(true);
 
     const handleMessage = (e: MessageEvent) => {

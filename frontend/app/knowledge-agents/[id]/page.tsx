@@ -384,7 +384,7 @@ export default function KnowledgeAgentDetail() {
       const { run_id } = await api.knowledgeAgents.query(id, userMsg, latestSessionId ?? undefined, convId, toolsOverride);
 
       liveEsRef.current?.close();
-      const es = new EventSource(`${backendUrl}/api/runs/${run_id}/stream`);
+      const es = new EventSource(`${backendUrl}/api/runs/${run_id}/stream`, { withCredentials: true });
       liveEsRef.current = es;
       let finalized = false;
 
