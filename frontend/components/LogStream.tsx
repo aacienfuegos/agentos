@@ -10,16 +10,18 @@ interface LogEvent {
   metadata?: Record<string, unknown> | null;
 }
 
-// Only execution trace events — text output lives in the Resultado tab
-const DISPLAY_LEVELS = new Set(["tool_use", "tool_result", "error"]);
+const BASE_LEVELS = new Set(["tool_use", "tool_result", "error"]);
+const ALL_LEVELS = new Set(["info", "tool_use", "tool_result", "error"]);
 
 const LEVEL_STYLES: Record<string, string> = {
+  info: "text-zinc-400",
   tool_use: "text-yellow-400",
   tool_result: "text-cyan-400",
   error: "text-red-400",
 };
 
 const LEVEL_PREFIX: Record<string, string> = {
+  info: "[INFO]",
   tool_use: "[TOOL]",
   tool_result: "[RESULT]",
   error: "[ERROR]",
@@ -29,7 +31,8 @@ function entryToEvent(entry: LogEntry): LogEvent {
   return { level: entry.level, message: entry.message, metadata: entry.extra };
 }
 
-export function LogStream({ runId, isLive }: { runId: string; isLive: boolean }) {
+export function LogStream({ runId, isLive, showInfo = false }: { runId: string; isLive: boolean; showInfo?: boolean }) {
+  const DISPLAY_LEVELS = showInfo ? ALL_LEVELS : BASE_LEVELS;
   const [logs, setLogs] = useState<LogEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const [copied, setCopied] = useState(false);

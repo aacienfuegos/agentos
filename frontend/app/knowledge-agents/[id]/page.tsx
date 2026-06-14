@@ -32,6 +32,12 @@ interface ChatMessage {
   tokens?: number;
 }
 
+interface LiveLogEvent {
+  level: string;
+  message: string;
+  metadata?: Record<string, unknown> | null;
+}
+
 // ---------------------------------------------------------------------------
 // File browser helpers
 // ---------------------------------------------------------------------------
@@ -144,8 +150,11 @@ export default function KnowledgeAgentDetail() {
   const [savingDefaultTools, setSavingDefaultTools] = useState(false);
   const [savedDefaultTools, setSavedDefaultTools] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
+  const [liveLogs, setLiveLogs] = useState<LiveLogEvent[]>([]);
+  const liveEsRef = useRef<EventSource | null>(null);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
 
   const setConversation = (convId: string | null) => {
     setConversationId(convId);
@@ -310,7 +319,11 @@ export default function KnowledgeAgentDetail() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, liveLogs]);
+
+  useEffect(() => {
+    return () => { liveEsRef.current?.close(); };
+  }, []);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -322,11 +335,35 @@ export default function KnowledgeAgentDetail() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  const finalizeRun = async (run_id: string) => {
+    liveEsRef.current?.close();
+    liveEsRef.current = null;
+    const run = await api.runs.get(run_id);
+    if (run.session_id) setLatestSessionId(run.session_id);
+    setLiveLogs([]);
+    setMessages((m) => {
+      const updated = [...m];
+      const last = updated[updated.length - 1];
+      if (last.role === "assistant") {
+        updated[updated.length - 1] = {
+          role: "assistant",
+          content: run.status === "success" ? (run.output ?? "") : (run.error ?? "Error desconocido"),
+          run_id,
+          status: run.status,
+          tokens: (run.tokens_input ?? 0) + (run.tokens_output ?? 0),
+        };
+      }
+      return updated;
+    });
+    setSending(false);
+  };
+
   const sendMessage = async () => {
     if (!input.trim() || sending) return;
     const userMsg = input.trim();
     setInput("");
     setSending(true);
+    setLiveLogs([]);
 
     let convId = conversationId;
     if (!convId) {
@@ -346,31 +383,35 @@ export default function KnowledgeAgentDetail() {
 
       const { run_id } = await api.knowledgeAgents.query(id, userMsg, latestSessionId ?? undefined, convId, toolsOverride);
 
-      const poll = async () => {
-        const run = await api.runs.get(run_id);
-        if (run.status === "running" || run.status === "pending") {
-          setTimeout(poll, 1500);
-          return;
-        }
-        if (run.session_id) setLatestSessionId(run.session_id);
-        setMessages((m) => {
-          const updated = [...m];
-          const last = updated[updated.length - 1];
-          if (last.role === "assistant") {
-            updated[updated.length - 1] = {
-              role: "assistant",
-              content: run.status === "success" ? (run.output ?? "") : (run.error ?? "Error desconocido"),
-              run_id,
-              status: run.status,
-              tokens: (run.tokens_input ?? 0) + (run.tokens_output ?? 0),
-            };
-          }
-          return updated;
-        });
-        setSending(false);
+      liveEsRef.current?.close();
+      const es = new EventSource(`${backendUrl}/api/runs/${run_id}/stream`);
+      liveEsRef.current = es;
+      let finalized = false;
+
+      const finish = () => {
+        if (finalized) return;
+        finalized = true;
+        finalizeRun(run_id);
       };
-      poll();
+
+      es.onmessage = (e: MessageEvent) => {
+        try {
+          const event: LiveLogEvent = JSON.parse(e.data);
+          if (["info", "tool_use", "tool_result", "error"].includes(event.level)) {
+            setLiveLogs((prev) => [...prev, event]);
+          }
+          if (event.level === "done" || event.level === "error") finish();
+        } catch { /* ignore */ }
+      };
+
+      es.addEventListener("done", finish);
+
+      es.onerror = () => {
+        es.close();
+        finish();
+      };
     } catch (err) {
+      setLiveLogs([]);
       setMessages((m) => {
         const updated = [...m];
         updated[updated.length - 1] = {
@@ -583,7 +624,38 @@ export default function KnowledgeAgentDetail() {
                     : "bg-white/[0.03] border border-white/[0.06] text-zinc-300"
                 }`}>
                   {msg.status === "pending" || (msg.status === "running" && !msg.content) ? (
-                    <span className="text-xs font-mono text-zinc-600 animate-pulse">procesando···</span>
+                    <div className="space-y-1.5">
+                      {liveLogs.length === 0 ? (
+                        <span className="text-xs font-mono text-zinc-600 animate-pulse">procesando···</span>
+                      ) : (
+                        <div className="space-y-1 max-h-52 overflow-y-auto pr-1">
+                          {liveLogs.map((log, li) => (
+                            <div key={li} className={`text-[11px] font-mono leading-relaxed ${
+                              log.level === "info" ? "text-zinc-500" :
+                              log.level === "tool_use" ? "text-yellow-400/80" :
+                              log.level === "tool_result" ? "text-cyan-400/80" :
+                              "text-red-400"
+                            }`}>
+                              {log.level === "tool_use" && log.metadata ? (
+                                <span>
+                                  <span className="text-zinc-600 mr-1">→</span>
+                                  <span className="text-yellow-300/80">{String(log.metadata.tool)}</span>
+                                  <span className="text-zinc-600 mx-1 text-[10px]">{JSON.stringify(log.metadata.input).slice(0, 100)}</span>
+                                </span>
+                              ) : log.level === "tool_result" ? (
+                                <span>
+                                  <span className="text-zinc-600 mr-1">←</span>
+                                  <span className="line-clamp-1">{log.message}</span>
+                                </span>
+                              ) : (
+                                <span className="line-clamp-3 whitespace-pre-wrap">{log.message}</span>
+                              )}
+                            </div>
+                          ))}
+                          <span className="text-[11px] font-mono text-zinc-700 animate-pulse block">···</span>
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <>
                       <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{msg.content}</pre>
