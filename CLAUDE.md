@@ -166,7 +166,7 @@ en `log_entries`. Tokens y coste se extraen del evento `result` final.
 
 ## Estado actual del desarrollo
 
-**Última sesión activa:** 2026-05-28 — polish completo + phase:knowledge-1 completa en develop
+**Última sesión activa:** 2026-06-14 — logs en tiempo real en knowledge agents (issue #99, PR #100)
 
 ### PRs abiertas (pendientes de merge en develop)
 
@@ -178,6 +178,7 @@ Ninguna (todo mergeado a develop).
 - #19 ntfy notifications, #24 health indicator dashboard, #25 log retention, #26 redirect 401 — en producción
 - #18 stats tokens/coste (#57 mergeado), #21 filtros y paginación (#58), #23 tests YAML loader (#59) — en develop
 - #30 KnowledgeAgent model + CRUD (#60), #31 KnowledgeRunner (#61), #32 Knowledge UI (#62) — en develop
+- #99 Logs en tiempo real en el chat de knowledge agents (#100) — en develop
 
 ### Fases pendientes del roadmap
 
@@ -195,3 +196,10 @@ Ninguna (todo mergeado a develop).
 - `KnowledgeRunner` envuelve `ClaudeCodeRunner` (CLI claude, Claude Pro — sin coste extra de API). Crea un `AgentDefinition` proxy en memoria con el `knowledge_doc` inyectado en el system prompt. Para actualizaciones del doc, el agente escribe el fichero completo en `/tmp/knowledge_update_{run_id}.md` vía herramienta `Write`; el runner lo lee al terminar, persiste en SQLite y lo borra.
 - Runs de knowledge agents tienen `agent_id = "knowledge:{id}"` — SQLite no fuerza FK por defecto, así que funciona sin cambiar el modelo `Run`.
 - `api.knowledgeAgents` en `frontend/lib/api.ts` cubre todo el CRUD + export/import + query.
+
+### Notas de arquitectura (SSE / logs en tiempo real)
+
+- El endpoint `GET /api/runs/{run_id}/stream` subscribe a Redis PRIMERO y luego comprueba el estado del run (no al revés). Esto evita una race condition donde agentes rápidos terminan entre el check y el subscribe, perdiendo todos los eventos.
+- El evento `done` de Redis se publica dentro de `ClaudeCodeRunner._handle_event`, antes de que el worker escriba `status=success` en la DB. El frontend espera a que el run alcance estado terminal (polling 300 ms) antes de mostrar la respuesta.
+- `EventSource` requiere `withCredentials: true` para enviar la cookie `agentos_token` en requests cross-origin (frontend :3000 → backend :8000). La cookie tiene `SameSite=Strict`.
+- `LogStream.tsx` acepta `showInfo?: boolean` para incluir opcionalmente los eventos `info` (texto intermedio del agente). El chat de knowledge agents los muestra; la página `/runs/[id]` no.
