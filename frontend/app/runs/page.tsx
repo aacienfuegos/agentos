@@ -168,7 +168,9 @@ export default function RunsList() {
                       href={`/runs/${run.id}`}
                       className="text-zinc-300 hover:text-amber-400 transition-colors font-medium"
                     >
-                      {agentMap[run.agent_id]?.name ?? run.agent_id}
+                      {run.agent_id === "__execute__"
+                        ? `api: ${run.input_params?.api_key_name ?? "external"}`
+                        : (agentMap[run.agent_id]?.name ?? run.agent_id)}
                     </Link>
                   </td>
                   <td className="px-4 py-3">

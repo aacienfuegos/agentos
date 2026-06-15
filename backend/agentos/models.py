@@ -84,6 +84,17 @@ class KnowledgeAgent(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class ApiKey(SQLModel, table=True):
+    __tablename__ = "api_keys"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    name: str
+    key_hash: str = Field(index=True)  # SHA-256 hex — never store raw key
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    last_used_at: datetime | None = None
+    enabled: bool = True
+
+
 class LogEntry(SQLModel, table=True):
     __tablename__ = "log_entries"
 

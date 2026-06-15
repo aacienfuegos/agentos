@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from arq.connections import RedisSettings
@@ -12,12 +13,40 @@ from ..runner.knowledge import KnowledgeRunner
 from ..tools.notifications import send_notification
 
 _KNOWLEDGE_PREFIX = "knowledge:"
+_EXECUTE_AGENT_ID = "__execute__"
+
+
+@dataclass
+class _ExecuteAgentProxy:
+    """In-memory AgentDefinition for async /api/execute runs."""
+    id: str
+    system_prompt: str
+    model: str
+    tools: list[str] = field(default_factory=list)
 
 
 async def run_agent_task(ctx: dict, run_id: str) -> None:
     with Session(engine, expire_on_commit=False) as session:
         run = session.get(Run, run_id)
         if not run:
+            return
+
+        # Route to generic execute runner (async mode of /api/execute)
+        if run.agent_id == _EXECUTE_AGENT_ID:
+            params = run.input_params
+            agent = _ExecuteAgentProxy(
+                id=_EXECUTE_AGENT_ID,
+                system_prompt=params.get("system_prompt", ""),
+                model=params.get("model", "claude-sonnet-4-6"),
+                tools=params.get("tools", ["WebFetch", "WebSearch"]),
+            )
+            run.status = RunStatus.running
+            run.started_at = datetime.utcnow()
+            session.add(run)
+            session.commit()
+            session.expunge(run)
+            timeout = params.get("timeout_seconds", 120)
+            await _run_generic(run, agent, timeout)
             return
 
         # Route to KnowledgeRunner if agent_id starts with "knowledge:"
@@ -146,6 +175,30 @@ async def _run_knowledge(run: Run, ka: KnowledgeAgent) -> None:
             priority="high",
         )
 
+
+
+async def _run_generic(run: Run, agent: _ExecuteAgentProxy, timeout: int) -> None:
+    runner = ClaudeCodeRunner()
+    run_id = run.id
+    try:
+        result = await asyncio.wait_for(runner.run(run, agent), timeout=timeout)
+        with Session(engine, expire_on_commit=False) as session:
+            run = session.get(Run, run_id)
+            if run:
+                run.status = RunStatus.success
+                run.output = result.output
+                run.tokens_input = result.tokens_input
+                run.tokens_output = result.tokens_output
+                run.tokens_cache_read = result.tokens_cache_read
+                run.tokens_cache_write = result.tokens_cache_write
+                run.session_id = result.session_id
+                run.finished_at = datetime.utcnow()
+                session.add(run)
+                session.commit()
+    except asyncio.TimeoutError:
+        _mark_failed(run_id, f"Timeout after {timeout}s")
+    except Exception as e:
+        _mark_failed(run_id, str(e))
 
 
 def _duration(run: Run) -> str:

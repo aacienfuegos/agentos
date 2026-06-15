@@ -67,6 +67,9 @@ export default function RunDetail() {
           const convId = (r.input_params as Record<string, string>).conversation_id;
           setAgentLink(`/knowledge-agents/${kaId}${convId ? `?conv=${convId}` : ""}`);
         } catch { setAgentName(r.agent_id); }
+      } else if (r.agent_id === "__execute__") {
+        const keyName = (r.input_params as Record<string, string>).api_key_name;
+        setAgentName(`api: ${keyName ?? "external"}`);
       } else {
         try {
           const a = await api.agents.get(r.agent_id);
