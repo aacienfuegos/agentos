@@ -40,3 +40,4 @@ Thumbs.db
 
 # Claude Code — machine-specific, no commitear
 .claude/settings.local.json
+.claude/scheduled_tasks.lock

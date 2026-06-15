@@ -99,9 +99,17 @@ npm run dev    # http://localhost:3000
 cd backend
 uv run pytest
 
+# Auditoría de seguridad Python (igual que CI)
+cd backend
+uv run pip-audit
+
 # TypeScript check frontend
 cd frontend
 npx tsc --noEmit
+
+# Auditoría de seguridad npm (igual que CI — ejecutar antes de pushear)
+cd frontend
+npm audit --audit-level=moderate
 ```
 
 ## Variables de entorno requeridas
@@ -134,12 +142,14 @@ feat/nombre-N  ──PR──►  develop  ──PR──►  main
 2. Crear rama desde `develop`: `feat/<nombre>-issue-<número>` o `fix/<nombre>-issue-<número>`
 3. Implementar con type hints completos
 4. `cd backend && uv run pytest` — pasar todos los tests sin excepción
-5. `cd frontend && npx tsc --noEmit` — verificar tipos sin excepción
-6. Probar visualmente en `http://localhost:3000`
-7. Commit con prefijo convencional: `feat(scope): descripción (#número)`
-8. PR hacia `develop` con `Closes #N` en el body
-9. Revisar en local con los servicios dev (`docker compose -f docker-compose.dev.yml up -d`). Si está bien, PR de `develop → main`
-10. Merge a `main` → CI publica automáticamente las imágenes en ghcr.io (`:latest`)
+5. `cd backend && uv run pip-audit` — sin vulnerabilidades Python
+6. `cd frontend && npx tsc --noEmit` — verificar tipos sin excepción
+7. `cd frontend && npm audit --audit-level=moderate` — sin vulnerabilidades npm
+8. Probar visualmente en `http://localhost:3000`
+9. Commit con prefijo convencional: `feat(scope): descripción (#número)`
+10. PR hacia `develop` con `Closes #N` en el body
+11. Revisar en local con los servicios dev (`docker compose -f docker-compose.dev.yml up -d`). Si está bien, PR de `develop → main`
+12. Merge a `main` → CI publica automáticamente las imágenes en ghcr.io (`:latest`)
 
 > **CI activo:** Cada PR ejecuta tests + `uv run pip-audit` + `npm audit`. Push a `develop` → imágenes `:staging`. Push a `main` → imágenes `:latest`. Trivy escanea HIGH/CRITICAL con fix antes de publicar. Dependabot abre PRs semanales (npm, docker, github-actions).
 >
@@ -166,7 +176,7 @@ en `log_entries`. Tokens y coste se extraen del evento `result` final.
 
 ## Estado actual del desarrollo
 
-**Última sesión activa:** 2026-06-14 — fix tokens (issue #102, PR #103/104)
+**Última sesión activa:** 2026-06-14 — dependabot npm + uv lock upgrade (PRs #94, #95, #105, #106)
 
 ### PRs abiertas (pendientes de merge en develop)
 
