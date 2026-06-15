@@ -5,13 +5,13 @@ from typing import Annotated, Any
 
 from arq import create_pool
 from arq.connections import RedisSettings
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlmodel import Session, func, select
 
 from ..config import settings
 from ..database import get_session, engine
-from ..models import Run, RunStatus
+from ..models import ApiKey, Run, RunStatus
 from ..runner.claude_code import ClaudeCodeRunner
 
 router = APIRouter()
@@ -85,13 +85,23 @@ def _check_concurrency(session: Session) -> None:
         raise HTTPException(429, f"Too many concurrent API runs (max {_MAX_CONCURRENT_API_RUNS})")
 
 
-def _create_run(session: Session, req: ExecuteRequest) -> Run:
+def _get_api_key_name(authorization: str, session: Session) -> str | None:
+    import hashlib
+    raw = authorization[len("Bearer "):]
+    key_hash = hashlib.sha256(raw.encode()).hexdigest()
+    key = session.exec(select(ApiKey).where(ApiKey.key_hash == key_hash)).first()
+    return key.name if key else None
+
+
+def _create_run(session: Session, req: ExecuteRequest, api_key_name: str | None = None) -> Run:
     input_params: dict[str, Any] = {
         "user_message": req.prompt,
         "system_prompt": req.system_prompt,
         "model": req.model,
         "timeout_seconds": req.timeout_seconds,
     }
+    if api_key_name:
+        input_params["api_key_name"] = api_key_name
     run = Run(
         agent_id=EXECUTE_AGENT_ID,
         triggered_by="api",
@@ -105,10 +115,12 @@ def _create_run(session: Session, req: ExecuteRequest) -> Run:
 
 
 @router.post("")
-async def execute(req: ExecuteRequest, session: SessionDep) -> ExecuteResponse | ExecuteAsyncResponse:
+async def execute(req: ExecuteRequest, request: Request, session: SessionDep) -> ExecuteResponse | ExecuteAsyncResponse:
     _check_budget(session)
     _check_concurrency(session)
-    run = _create_run(session, req)
+    auth = request.headers.get("Authorization", "")
+    api_key_name = _get_api_key_name(auth, session) if auth.startswith("Bearer sk-agentos-") else None
+    run = _create_run(session, req, api_key_name)
 
     run_id = run.id  # Store before any commit/expunge cycle
 
