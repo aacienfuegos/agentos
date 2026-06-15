@@ -176,7 +176,7 @@ en `log_entries`. Tokens y coste se extraen del evento `result` final.
 
 ## Estado actual del desarrollo
 
-**Última sesión activa:** 2026-06-14 — dependabot npm + uv lock upgrade (PRs #94, #95, #105, #106)
+**Última sesión activa:** 2026-06-15 — dependabot npm (8 PRs) + uv lock upgrades + npm audit fix (@babel/core, js-yaml)
 
 ### PRs abiertas (pendientes de merge en develop)
 
