@@ -38,6 +38,7 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
                 id=_EXECUTE_AGENT_ID,
                 system_prompt=params.get("system_prompt", ""),
                 model=params.get("model", "claude-sonnet-4-6"),
+                tools=params.get("tools", ["WebFetch", "WebSearch"]),
             )
             run.status = RunStatus.running
             run.started_at = datetime.utcnow()

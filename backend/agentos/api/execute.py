@@ -26,6 +26,9 @@ _DEFAULT_SYSTEM_PROMPT = (
 
 _MAX_CONCURRENT_API_RUNS = 3
 
+# Tools safe to expose via the external API (no filesystem/shell access)
+_SAFE_TOOLS: list[str] = ["WebFetch", "WebSearch"]
+
 
 @dataclass
 class _ExecuteAgentProxy:
@@ -33,7 +36,7 @@ class _ExecuteAgentProxy:
     id: str = EXECUTE_AGENT_ID
     system_prompt: str = _DEFAULT_SYSTEM_PROMPT
     model: str = "claude-sonnet-4-6"
-    tools: list[str] = field(default_factory=list)
+    tools: list[str] = field(default_factory=lambda: list(_SAFE_TOOLS))
 
 
 class ExecuteRequest(BaseModel):
@@ -42,8 +45,13 @@ class ExecuteRequest(BaseModel):
     model: str = "claude-sonnet-4-6"
     timeout_seconds: int = Field(default=120, ge=5, le=600)
     async_mode: bool = Field(default=False, alias="async")
+    tools: list[str] = Field(default_factory=lambda: list(_SAFE_TOOLS))
 
     model_config = {"populate_by_name": True}
+
+    def safe_tools(self) -> list[str]:
+        """Return only whitelisted tools, ignoring any unknown names."""
+        return [t for t in self.tools if t in _SAFE_TOOLS]
 
 
 class ExecuteResponse(BaseModel):
@@ -99,6 +107,7 @@ def _create_run(session: Session, req: ExecuteRequest, api_key_name: str | None 
         "system_prompt": req.system_prompt,
         "model": req.model,
         "timeout_seconds": req.timeout_seconds,
+        "tools": req.safe_tools(),
     }
     if api_key_name:
         input_params["api_key_name"] = api_key_name
@@ -134,6 +143,7 @@ async def execute(req: ExecuteRequest, request: Request, session: SessionDep) ->
     agent = _ExecuteAgentProxy(
         system_prompt=req.system_prompt,
         model=req.model,
+        tools=req.safe_tools(),
     )
 
     run.status = RunStatus.running

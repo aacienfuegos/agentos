@@ -91,6 +91,7 @@ Las API keys **no pueden** acceder a endpoints de administración (`/api/agents`
 | `model` | string | `claude-sonnet-4-6` | Modelo de Claude. Opciones: `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`, `claude-opus-4-8` |
 | `timeout_seconds` | int | `120` | Tiempo máximo de espera. Rango: 5–600. En modo síncrono, expirar devuelve 408. |
 | `async` | bool | `false` | Si `true`, no espera la ejecución y devuelve solo el `run_id`. |
+| `tools` | string[] | `["WebFetch","WebSearch"]` | Tools disponibles para Claude. Solo se aceptan `WebFetch` y `WebSearch`. Pasa `[]` para deshabilitar el acceso a internet. |
 
 ### Respuesta síncrona (200)
 
@@ -218,7 +219,7 @@ Cuando el error incluye `run_id`, la ejecución quedó registrada en AgentOS con
 - **Concurrencia:** máximo 3 ejecuciones API simultáneas. Si se supera, devuelve `429`.
 - **Timeout:** 5–600 segundos. En modo síncrono, el cliente HTTP debe tener un timeout mayor que `timeout_seconds`.
 - **Presupuesto:** si `MONTHLY_BUDGET_USD` está configurado en AgentOS, se comprueba antes de ejecutar.
-- **Sin herramientas:** `/api/execute` no da acceso a herramientas del sistema (filesystem, GitHub, etc.). Solo Claude puro. Si necesitas herramientas, usa agentes built-in desde la UI o el webhook.
+- **Tools disponibles:** `WebFetch` (leer URLs) y `WebSearch` (buscar en la web), activos por defecto. Tools de sistema (filesystem, shell) nunca están disponibles vía API externa. Pasa `"tools": []` para deshabilitar el acceso a internet completamente.
 - **Output crudo:** el `output` es el texto que Claude devuelve sin procesar. Si esperas JSON, el cliente debe hacer `JSON.parse(output)` y validar.
 
 ---
