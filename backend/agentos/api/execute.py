@@ -128,6 +128,7 @@ async def execute(req: ExecuteRequest, session: SessionDep) -> ExecuteResponse |
     run.started_at = datetime.utcnow()
     session.add(run)
     session.commit()
+    session.refresh(run)
     session.expunge(run)
 
     runner = ClaudeCodeRunner()
