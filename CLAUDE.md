@@ -176,11 +176,11 @@ en `log_entries`. Tokens y coste se extraen del evento `result` final.
 
 ## Estado actual del desarrollo
 
-**Última sesión activa:** 2026-06-14 — dependabot npm + uv lock upgrade (PRs #94, #95, #105, #106)
+**Última sesión activa:** 2026-06-15 — API keys + endpoint /api/execute para integración externa + fixes post-pruebas (PR #120)
 
 ### PRs abiertas (pendientes de merge en develop)
 
-Ninguna (todo mergeado a main).
+- **#120** `feat/external-api-issue-117` — API keys + POST /api/execute (cierra #117, #118, #119). Incluye fixes post-pruebas: `session.refresh` antes de expunge, mount `.claude` en backend dev, nombre de API key en `input_params` y display en `/runs`.
 
 ### Issues ya implementados
 
@@ -204,6 +204,14 @@ Todos los issues de phase:core, phase:scheduler, phase:polish y phase:knowledge-
 - Runs de knowledge agents tienen `agent_id = "knowledge:{id}"` — SQLite no fuerza FK por defecto, así que funciona sin cambiar el modelo `Run`.
 - `tokens_input` en `Run` almacena solo `input_tokens` reales (no cacheados). `tokens_cache_read` y `tokens_cache_write` se guardan por separado para diagnóstico.
 - `api.knowledgeAgents` en `frontend/lib/api.ts` cubre todo el CRUD + upload (files/folders/zips) + query.
+
+### Notas de arquitectura (phase:external-api)
+
+- `POST /api/execute` acepta cualquier prompt y lo ejecuta con `ClaudeCodeRunner`. Modo síncrono (runner directo en backend) y asíncrono (ARQ worker). Runs con `agent_id="__execute__"` y `triggered_by="api"`.
+- Auth vía `Authorization: Bearer sk-agentos-...`. Las API keys solo tienen acceso a `/api/execute` y `/api/runs/*` — el resto devuelve 403.
+- El nombre de la API key se guarda en `input_params["api_key_name"]` para identificar qué app originó el run. El frontend muestra `api: <nombre>` en lugar del sentinel `__execute__`.
+- En dev, `~/.claude` y `~/.claude.json` se montan en ambos contenedores (backend y worker) para que el CLI esté autenticado. En producción pendiente issue #121 (named volume + `claude /login` en primer arranque).
+- Guía de integración completa en `docs/external-api.md`.
 
 ### Notas de arquitectura (SSE / logs en tiempo real)
 

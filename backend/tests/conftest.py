@@ -47,10 +47,12 @@ from agentos.database import get_session  # noqa: E402
 import agentos.api.stats as _stats_module
 import agentos.agents.builtin as _builtin_module
 import agentos.worker.scheduler as _scheduler_module
+import agentos.api.execute as _execute_module
 
 _stats_module.engine = _ENGINE
 _builtin_module.engine = _ENGINE
 _scheduler_module.engine = _ENGINE
+_execute_module.engine = _ENGINE
 
 
 def _test_get_session():
