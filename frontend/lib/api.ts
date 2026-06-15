@@ -73,6 +73,39 @@ export interface HealthStatus {
   services: { redis: boolean; database: boolean };
 }
 
+export interface ApiKey {
+  id: string;
+  name: string;
+  created_at: string;
+  last_used_at: string | null;
+  enabled: boolean;
+}
+
+export interface ApiKeyCreated extends ApiKey {
+  raw_key: string;
+}
+
+export interface ExecuteRequest {
+  prompt: string;
+  system_prompt?: string;
+  model?: string;
+  timeout_seconds?: number;
+  async?: boolean;
+}
+
+export interface ExecuteResponse {
+  output: string;
+  tokens_input: number;
+  tokens_output: number;
+  cost_usd: number | null;
+  run_id: string;
+}
+
+export interface ExecuteAsyncResponse {
+  run_id: string;
+  status: string;
+}
+
 export interface KnowledgeAgent {
   id: string;
   name: string;
@@ -177,6 +210,18 @@ export const api = {
   },
   stats: () => apiFetch<Stats>("/api/stats"),
   health: () => apiFetch<HealthStatus>("/api/health"),
+  apiKeys: {
+    list: () => apiFetch<ApiKey[]>("/api/api-keys"),
+    create: (name: string) =>
+      apiFetch<ApiKeyCreated>("/api/api-keys", { method: "POST", body: JSON.stringify({ name }) }),
+    delete: (id: string) =>
+      apiFetch<void>(`/api/api-keys/${id}`, { method: "DELETE" }),
+  },
+  execute: (req: ExecuteRequest) =>
+    apiFetch<ExecuteResponse | ExecuteAsyncResponse>("/api/execute", {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
   knowledgeAgents: {
     list: () => apiFetch<KnowledgeAgent[]>("/api/knowledge-agents"),
     get: (id: string) => apiFetch<KnowledgeAgent>(`/api/knowledge-agents/${id}`),
