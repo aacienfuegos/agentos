@@ -15,6 +15,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y --no-install-recommends nodejs \
     && npm install -g @anthropic-ai/claude-code \
     && npm install -g npm@latest \
+    && mkdir /tmp/undici-fix && cd /tmp/undici-fix \
+       && npm install undici@6.27.0 \
+       && cp -rf node_modules/undici "$(npm root -g)/npm/node_modules/" \
+       && cd / && rm -rf /tmp/undici-fix \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files first for layer caching

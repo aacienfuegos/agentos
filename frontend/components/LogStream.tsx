@@ -37,7 +37,7 @@ export function LogStream({ runId, isLive, showInfo = false }: { runId: string; 
   const [connected, setConnected] = useState(false);
   const [copied, setCopied] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
+  const backendUrl = "";
 
   // Finished runs: fetch from REST
   useEffect(() => {
