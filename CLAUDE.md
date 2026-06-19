@@ -210,7 +210,7 @@ Todos los issues de phase:core, phase:scheduler, phase:polish y phase:knowledge-
 - `POST /api/execute` acepta cualquier prompt y lo ejecuta con `ClaudeCodeRunner`. Modo síncrono (runner directo en backend) y asíncrono (ARQ worker). Runs con `agent_id="__execute__"` y `triggered_by="api"`.
 - Auth vía `Authorization: Bearer sk-agentos-...`. Las API keys solo tienen acceso a `/api/execute` y `/api/runs/*` — el resto devuelve 403.
 - El nombre de la API key se guarda en `input_params["api_key_name"]` para identificar qué app originó el run. El frontend muestra `api: <nombre>` en lugar del sentinel `__execute__`.
-- En dev, `~/.claude` y `~/.claude.json` se montan en ambos contenedores (backend y worker) para que el CLI esté autenticado. En producción pendiente issue #121 (named volume + `claude /login` en primer arranque).
+- En dev, `~/.claude` y `~/.claude.json` se montan en ambos contenedores (backend y worker) para que el CLI esté autenticado. En producción se usa el named volume `claude_config` (montado en `/home/worker/.claude`): `docker compose exec worker claude /login` una sola vez tras el primer deploy.
 - Guía de integración completa en `docs/external-api.md`.
 
 ### Notas de arquitectura (SSE / logs en tiempo real)

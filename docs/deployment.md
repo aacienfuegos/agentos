@@ -98,27 +98,18 @@ BACKEND_URL=http://backend:8000
 
 ### 3. Autenticar el CLI de Claude
 
-El backend y el worker ejecutan el CLI `claude` como subproceso. El CLI necesita estar autenticado con una sesión de Claude Pro.
-
-**Problema pendiente (issue #121):** en producción aún no hay un volumen named para la sesión de Claude. Por ahora, la autenticación se gestiona montando `~/.claude` y `~/.claude.json` desde el host (igual que en dev). Pasos:
+El backend y el worker ejecutan el CLI `claude` como subproceso. La sesión se persiste en el volumen named `claude_config` (compartido entre ambos servicios), por lo que solo hay que hacer login una vez — incluso tras reiniciar o actualizar los contenedores.
 
 ```bash
-# En el servidor, autenticar claude una vez de forma interactiva
-# (requiere que claude CLI esté instalado en el host o usar un contenedor temporal)
-npx @anthropic-ai/claude-code /login
+# Levantar los servicios primero (el volumen se crea al hacer up)
+docker compose up -d
+
+# Autenticar claude en el worker (la sesión queda en el volumen compartido)
+docker compose exec worker claude /login
 # Seguir el flujo OAuth en el browser
 ```
 
-Esto crea `~/.claude/` y `~/.claude.json` en el home del usuario del host.
-
-Luego añadir al `docker-compose.yml` (en los servicios `backend` y `worker`):
-```yaml
-volumes:
-  - ${HOME}/.claude:/home/worker/.claude
-  - ${HOME}/.claude.json:/home/worker/.claude.json
-```
-
-> Nota: el archivo `docker-compose.dev.yml` ya tiene estos mounts — úsalo como referencia exacta.
+> El volumen `claude_config` está declarado en `docker-compose.yml` y se monta en `/home/worker/.claude` en los servicios `backend` y `worker`. Una vez autenticado, la sesión sobrevive a reinicios y rebuilds.
 
 ### 4. Levantar los servicios
 
@@ -165,11 +156,12 @@ La base de datos SQLite persiste en el volumen `backend_data` — las actualizac
 ## Estructura de volúmenes Docker
 
 ```
-backend_data    → /data/agentos.db  (SQLite)
-                  /data/knowledge/  (Knowledge agents)
-caddy_data      → /data/            (certificados TLS de Caddy)
-caddy_config    → /config/          (configuración Caddy auto-generada)
-redis_data      → /data/            (persistencia Redis)
+backend_data    → /data/agentos.db           (SQLite)
+                  /data/knowledge/            (Knowledge agents)
+caddy_data      → /data/                     (certificados TLS de Caddy)
+caddy_config    → /config/                   (configuración Caddy auto-generada)
+redis_data      → /data/                     (persistencia Redis)
+claude_config   → /home/worker/.claude       (sesión CLI claude — compartido entre backend y worker)
 ```
 
 Los volúmenes son gestionados por Docker. Para hacer backup de la base de datos:
