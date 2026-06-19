@@ -4,7 +4,6 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -13,19 +12,13 @@ services:
       - frontend
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_BACKEND_URL=${BACKEND_URL:-http://localhost:8000}
+    image: ghcr.io/aacienfuegos/agentos-frontend:latest
     restart: unless-stopped
     depends_on:
       - backend
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ghcr.io/aacienfuegos/agentos-backend:latest
     restart: unless-stopped
     environment:
       - DATABASE_URL=sqlite:////data/agentos.db
@@ -52,9 +45,7 @@ services:
       start_period: 15s
 
   worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ghcr.io/aacienfuegos/agentos-backend:latest
     command: python -m arq agentos.worker.tasks.WorkerSettings
     restart: unless-stopped
     environment:
