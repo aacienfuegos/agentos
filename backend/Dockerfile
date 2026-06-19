@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y --no-install-recommends nodejs \
     && npm install -g @anthropic-ai/claude-code \
     && npm install -g npm@latest \
+    && npm --prefix /usr/local/lib/node_modules/npm install \
+       --no-save --no-package-lock --ignore-scripts undici@6.27.0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files first for layer caching
