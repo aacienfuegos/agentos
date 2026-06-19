@@ -1,0 +1,26 @@
+# Override para probar el flujo de autenticación Claude en local.
+# Elimina los bind mounts de ~/.claude y usa un named volume (igual que producción).
+#
+# Uso:
+#   docker compose -f docker-compose.dev.yml -f docker-compose.dev.noauth.yml up -d
+#   docker compose -f docker-compose.dev.yml -f docker-compose.dev.noauth.yml exec -it worker claude /login
+
+services:
+  backend:
+    volumes:
+      - ./backend/agentos:/app/agentos
+      - backend_data:/data
+      - ./agents_config:/app/agents_config
+      - /var/run/docker.sock:/var/run/docker.sock
+      - claude_config:/home/worker/.claude
+
+  worker:
+    volumes:
+      - ./backend/agentos:/app/agentos
+      - backend_data:/data
+      - ./agents_config:/app/agents_config
+      - /var/run/docker.sock:/var/run/docker.sock
+      - claude_config:/home/worker/.claude
+
+volumes:
+  claude_config:
