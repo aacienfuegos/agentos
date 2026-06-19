@@ -101,7 +101,7 @@ export default function Dashboard() {
     try {
       setHealth(await api.health());
     } catch {
-      setHealth({ status: "degraded", version: "?", services: { redis: false, database: false } });
+      setHealth({ status: "degraded", version: "?", services: { redis: false, database: false, claude: false } });
     }
   };
 
@@ -130,6 +130,20 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Claude auth warning */}
+      {health && health.services.claude === false && (
+        <div className="flex items-start gap-3 px-4 py-3 rounded-lg border border-amber-400/30 bg-amber-400/[0.04] text-sm">
+          <span className="text-amber-400 font-mono shrink-0 mt-0.5">⚠</span>
+          <div className="space-y-1">
+            <p className="text-amber-300 font-medium">Claude no autenticado</p>
+            <p className="text-zinc-400 text-xs">Los agentes fallarán hasta que hagas login. Ejecuta en el servidor:</p>
+            <code className="block text-xs font-mono text-amber-400/80 bg-black/30 px-2 py-1 rounded mt-1">
+              docker compose exec -it worker claude /login
+            </code>
+          </div>
+        </div>
+      )}
+
       {/* Top stats strip */}
       {(stats || health) && (
         <div className="flex items-center gap-6 text-xs font-mono text-zinc-600">

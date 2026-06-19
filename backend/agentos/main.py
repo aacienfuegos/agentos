@@ -131,9 +131,13 @@ async def health():
     except Exception:
         pass
 
-    status = "ok" if (redis_ok and db_ok) else "degraded"
+    from pathlib import Path
+    credentials = Path.home() / ".claude" / ".credentials.json"
+    claude_ok = credentials.exists() and credentials.stat().st_size > 0
+
+    status = "ok" if (redis_ok and db_ok and claude_ok) else "degraded"
     return {
         "status": status,
         "version": "0.1.0",
-        "services": {"redis": redis_ok, "database": db_ok},
+        "services": {"redis": redis_ok, "database": db_ok, "claude": claude_ok},
     }

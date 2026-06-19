@@ -70,7 +70,7 @@ export interface LogEntry {
 export interface HealthStatus {
   status: "ok" | "degraded";
   version: string;
-  services: { redis: boolean; database: boolean };
+  services: { redis: boolean; database: boolean; claude: boolean };
 }
 
 export interface ApiKey {
