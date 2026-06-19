@@ -12,8 +12,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 RUN apk upgrade --no-cache \
     && npm install -g npm@latest \
-    && npm --prefix /usr/local/lib/node_modules/npm install \
-       --no-save --no-package-lock --ignore-scripts undici@6.27.0
+    && mkdir /tmp/undici-fix && cd /tmp/undici-fix \
+    && npm install undici@6.27.0 \
+    && cp -rf node_modules/undici "$(npm root -g)/npm/node_modules/" \
+    && cd / && rm -rf /tmp/undici-fix
 
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
