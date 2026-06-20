@@ -131,9 +131,19 @@ async def health():
     except Exception:
         pass
 
-    status = "ok" if (redis_ok and db_ok) else "degraded"
+    from pathlib import Path
+    home = Path.home()
+    # Claude Code stores auth in ~/.claude/.credentials.json (newer) or ~/.claude.json (older)
+    credentials = home / ".claude" / ".credentials.json"
+    credentials_legacy = home / ".claude.json"
+    claude_ok = (
+        (credentials.exists() and credentials.stat().st_size > 0)
+        or (credentials_legacy.exists() and credentials_legacy.stat().st_size > 0)
+    )
+
+    status = "ok" if (redis_ok and db_ok and claude_ok) else "degraded"
     return {
         "status": status,
         "version": "0.1.0",
-        "services": {"redis": redis_ok, "database": db_ok},
+        "services": {"redis": redis_ok, "database": db_ok, "claude": claude_ok},
     }

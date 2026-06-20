@@ -34,6 +34,7 @@ services:
       - backend_data:/data
       - ./agents_config:/app/agents_config
       - /var/run/docker.sock:/var/run/docker.sock
+      - claude_config:/home/worker
     depends_on:
       redis:
         condition: service_healthy
@@ -60,6 +61,7 @@ services:
       - backend_data:/data
       - ./agents_config:/app/agents_config
       - /var/run/docker.sock:/var/run/docker.sock
+      - claude_config:/home/worker
       # Knowledge agents con rutas externas: monta aquí los directorios del host.
       # Ejemplo: - ${HOME}/docu:/knowledge:rw
       # Luego pon knowledge_path=/knowledge/homelab en la config del agente.
@@ -85,3 +87,4 @@ volumes:
   caddy_config:
   backend_data:
   redis_data:
+  claude_config:
