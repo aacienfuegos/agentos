@@ -96,6 +96,18 @@ def test_execute_timeout_validation(app_client: TestClient):
     assert resp.status_code == 422
 
 
+def test_execute_prompt_too_long(app_client: TestClient):
+    """prompt must not exceed 200_000 chars."""
+    resp = app_client.post("/api/execute", json={**_VALID_REQUEST, "prompt": "x" * 200_001})
+    assert resp.status_code == 422
+
+
+def test_execute_system_prompt_too_long(app_client: TestClient):
+    """system_prompt must not exceed 20_000 chars."""
+    resp = app_client.post("/api/execute", json={**_VALID_REQUEST, "system_prompt": "x" * 20_001})
+    assert resp.status_code == 422
+
+
 def test_execute_budget_exceeded(app_client: TestClient):
     from agentos.api.execute import _check_budget
     with patch("agentos.api.execute._check_budget", side_effect=__import__("fastapi").HTTPException(402, "budget")):

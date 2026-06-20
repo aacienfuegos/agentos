@@ -39,9 +39,13 @@ class _ExecuteAgentProxy:
     tools: list[str] = field(default_factory=lambda: list(_SAFE_TOOLS))
 
 
+_MAX_PROMPT_CHARS = 200_000        # ~50K tokens — handles PDFs up to ~70 pages
+_MAX_SYSTEM_PROMPT_CHARS = 20_000  # ~5K tokens — instructions + session context
+
+
 class ExecuteRequest(BaseModel):
-    prompt: str
-    system_prompt: str = _DEFAULT_SYSTEM_PROMPT
+    prompt: str = Field(max_length=_MAX_PROMPT_CHARS)
+    system_prompt: str = Field(default=_DEFAULT_SYSTEM_PROMPT, max_length=_MAX_SYSTEM_PROMPT_CHARS)
     model: str = "claude-sonnet-4-6"
     timeout_seconds: int = Field(default=120, ge=5, le=600)
     async_mode: bool = Field(default=False, alias="async")
