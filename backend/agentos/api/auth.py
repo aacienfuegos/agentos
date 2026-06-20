@@ -1,8 +1,8 @@
 import hmac
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
+import jwt
 from fastapi import APIRouter, HTTPException, Response, Cookie
-from jose import jwt, JWTError
 from pydantic import BaseModel
 
 from ..config import settings
@@ -18,7 +18,7 @@ def _verify_password(plain: str) -> bool:
 
 
 def _create_token() -> str:
-    expire = datetime.utcnow() + timedelta(days=JWT_EXPIRE_DAYS)
+    expire = datetime.now(tz=timezone.utc) + timedelta(days=JWT_EXPIRE_DAYS)
     return jwt.encode({"sub": "admin", "exp": expire}, settings.secret_key, algorithm=JWT_ALGORITHM)
 
 
@@ -28,7 +28,7 @@ def verify_token(token: str | None) -> bool:
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[JWT_ALGORITHM])
         return payload.get("sub") == "admin"
-    except JWTError:
+    except jwt.PyJWTError:
         return False
 
 
