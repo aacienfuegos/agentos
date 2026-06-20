@@ -105,7 +105,7 @@ export default function Dashboard() {
     }
   };
 
-  useEffect(() => {
+useEffect(() => {
     fetchData();
     fetchHealth();
     const interval = setInterval(fetchData, 5000);
