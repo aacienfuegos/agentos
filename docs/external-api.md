@@ -86,8 +86,8 @@ Las API keys **no pueden** acceder a endpoints de administración (`/api/agents`
 
 | Campo | Tipo | Defecto | Descripción |
 |-------|------|---------|-------------|
-| `prompt` | string | — | Prompt completo a enviar a Claude |
-| `system_prompt` | string | Asistente genérico | System prompt a prepender. Si el cliente tiene instrucciones específicas, aquí es donde van. |
+| `prompt` | string | — | Prompt completo a enviar a Claude. Máx. **200 000 chars** (~70 páginas de PDF). |
+| `system_prompt` | string | Asistente genérico | System prompt a prepender. Máx. **20 000 chars**. |
 | `model` | string | `claude-sonnet-4-6` | Modelo de Claude. Opciones: `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`, `claude-opus-4-8` |
 | `timeout_seconds` | int | `120` | Tiempo máximo de espera. Rango: 5–600. En modo síncrono, expirar devuelve 408. |
 | `async` | bool | `false` | Si `true`, no espera la ejecución y devuelve solo el `run_id`. |
@@ -206,7 +206,7 @@ Las ejecuciones con `agent_id = "__execute__"` y `triggered_by = "api"` son las 
 | `402` | Presupuesto mensual superado | `{"detail": "Monthly budget of $X exceeded"}` |
 | `403` | API key intentando acceder a endpoint de admin | `{"detail": "Forbidden: API keys cannot access this endpoint"}` |
 | `408` | Timeout superado (modo síncrono) | `{"detail": {"error": "Timeout after Xs", "run_id": "..."}}` |
-| `422` | Validación del body (ej: timeout_seconds fuera de rango) | Detalle Pydantic estándar |
+| `422` | Validación del body (timeout_seconds fuera de rango, prompt/system_prompt demasiado largos) | Detalle Pydantic estándar |
 | `429` | Demasiadas ejecuciones API concurrentes (máx 3) | `{"detail": "Too many concurrent API runs (max 3)"}` |
 | `500` | Error interno del runner | `{"detail": {"error": "...", "run_id": "..."}}` |
 
@@ -216,6 +216,7 @@ Cuando el error incluye `run_id`, la ejecución quedó registrada en AgentOS con
 
 ## 6. Límites y consideraciones
 
+- **Longitud de campos:** `prompt` máx. 200 000 chars (~50 000 tokens, suficiente para PDFs de ~70 páginas). `system_prompt` máx. 20 000 chars (~5 000 tokens). Superar estos límites devuelve `422` inmediatamente, antes de ejecutar nada.
 - **Concurrencia:** máximo 3 ejecuciones API simultáneas. Si se supera, devuelve `429`.
 - **Timeout:** 5–600 segundos. En modo síncrono, el cliente HTTP debe tener un timeout mayor que `timeout_seconds`.
 - **Presupuesto:** si `MONTHLY_BUDGET_USD` está configurado en AgentOS, se comprueba antes de ejecutar.
