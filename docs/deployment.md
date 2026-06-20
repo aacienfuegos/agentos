@@ -161,7 +161,7 @@ backend_data    → /data/agentos.db           (SQLite)
 caddy_data      → /data/                     (certificados TLS de Caddy)
 caddy_config    → /config/                   (configuración Caddy auto-generada)
 redis_data      → /data/                     (persistencia Redis)
-claude_config   → /home/worker/.claude       (sesión CLI claude — compartido entre backend y worker)
+claude_config   → /home/worker               (home del usuario worker — persiste sesión Claude entre reinicios)
 ```
 
 Los volúmenes son gestionados por Docker. Para hacer backup de la base de datos:

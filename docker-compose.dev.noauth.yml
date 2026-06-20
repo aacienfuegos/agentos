@@ -12,7 +12,7 @@ services:
       - backend_data:/data
       - ./agents_config:/app/agents_config
       - /var/run/docker.sock:/var/run/docker.sock
-      - claude_config:/home/worker/.claude
+      - claude_config:/home/worker
 
   worker:
     volumes:
@@ -20,7 +20,7 @@ services:
       - backend_data:/data
       - ./agents_config:/app/agents_config
       - /var/run/docker.sock:/var/run/docker.sock
-      - claude_config:/home/worker/.claude
+      - claude_config:/home/worker
 
 volumes:
   claude_config:
