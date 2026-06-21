@@ -40,8 +40,18 @@ function StatusDot({ status }: { status: Run["status"] }) {
   );
 }
 
+function resolveAgentName(run: Run, agents: Agent[]): string {
+  if (run.agent_id === "__execute__") {
+    const keyName = (run.input_params as Record<string, string> | null)?.api_key_name;
+    return `api: ${keyName ?? "external"}`;
+  }
+  if (run.agent_id.startsWith("knowledge:")) {
+    return run.agent_id;
+  }
+  return agents.find((a) => a.id === run.agent_id)?.name ?? run.agent_id;
+}
+
 function RunRow({ run, agents }: { run: Run; agents: Agent[] }) {
-  const agent = agents.find((a) => a.id === run.agent_id);
   const duration =
     run.started_at && run.finished_at
       ? `${Math.round((asUTC(run.finished_at).getTime() - asUTC(run.started_at).getTime()) / 1000)}s`
@@ -54,7 +64,7 @@ function RunRow({ run, agents }: { run: Run; agents: Agent[] }) {
     >
       <StatusDot status={run.status} />
       <span className="flex-1 text-sm text-zinc-300 truncate group-hover:text-zinc-100 transition-colors">
-        {agent?.name ?? run.agent_id}
+        {resolveAgentName(run, agents)}
       </span>
       <span className="text-xs font-mono text-zinc-600">{duration}</span>
     </Link>
