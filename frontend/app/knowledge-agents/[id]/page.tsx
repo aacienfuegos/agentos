@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, KnowledgeAgent, KnowledgeFile, Run, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
-import { fmtTokens } from "@/lib/utils";
+import { fmtTokens, generateUUID } from "@/lib/utils";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
 
@@ -374,7 +374,7 @@ export default function KnowledgeAgentDetail() {
 
     let convId = conversationId;
     if (!convId) {
-      convId = crypto.randomUUID();
+      convId = generateUUID();
       setConversation(convId);
     }
 
