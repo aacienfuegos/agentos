@@ -57,7 +57,6 @@ jobs:
     name: Build, scan y push ${{ matrix.service }}
     needs: checks
     runs-on: ubuntu-latest
-    environment: production
     permissions:
       contents: read
       packages: write
