@@ -47,7 +47,7 @@ services:
 
   worker:
     image: ghcr.io/aacienfuegos/agentos-backend:latest
-    command: python -m arq agentos.worker.tasks.WorkerSettings
+    command: uv run python -m arq agentos.worker.tasks.WorkerSettings
     restart: unless-stopped
     environment:
       - DATABASE_URL=sqlite:////data/agentos.db
