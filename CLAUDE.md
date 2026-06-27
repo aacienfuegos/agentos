@@ -176,23 +176,23 @@ en `log_entries`. Tokens y coste se extraen del evento `result` final.
 
 ## Estado actual del desarrollo
 
-**Última sesión activa:** 2026-06-15 — API keys + endpoint /api/execute para integración externa + fixes post-pruebas (PR #120)
+**Última sesión activa:** 2026-06-27 — limpieza de configuración Claude Code: harness centralizado en `~/.claude/`, skills del proyecto commiteadas (`api-design`, `fastapi-arq`, `python-testing`), `settings.json` vaciado de permisos duplicados
 
-### PRs abiertas (pendientes de merge en develop)
+### PRs abiertas
 
-- **#120** `feat/external-api-issue-117` — API keys + POST /api/execute (cierra #117, #118, #119). Incluye fixes post-pruebas: `session.refresh` antes de expunge, mount `.claude` en backend dev, nombre de API key en `input_params` y display en `/runs`.
+Solo PRs de Dependabot (#148–151): `@types/node`, `lucide-react`, `@base-ui/react`, `actions/checkout`. Sin PRs de feature pendientes.
 
 ### Issues ya implementados
 
-Todos los issues de phase:core, phase:scheduler, phase:polish y phase:knowledge-1 están cerrados y en producción (main). Ver historial de issues cerrados en GitHub.
+Cerrados y en producción (main): phase:core, phase:scheduler, phase:knowledge-1, phase:external-api (#117–#120) — todos los issues cerrados. phase:polish parcialmente: #20 (Caddy + Tailscale) sigue abierto. Ver historial completo en GitHub.
 
 ### Fases pendientes del roadmap
 
 | Fase | Issues | Descripción |
 |------|--------|-------------|
 | phase:polish | #20 | Caddy + Tailscale para acceso seguro en producción |
-| phase:knowledge-2 | #33, #34, #35, #36 | Knowledge Agent: system prompt auto-generado, automatizaciones |
-| phase:multimodel | #37–#45 | ⚠️ PENDIENTE REDEFINICIÓN — issues originales asumían runners OpenAI/Gemini (incompatible con restricción Claude Pro). Reencuadrar como multi-modelo dentro de Claude: sonnet/haiku/opus vía flag `--model` |
+| phase:knowledge-2 | #33, #34, #36 | Knowledge Agent: system prompt auto-generado, automatizaciones |
+| phase:multimodel | #37–#45 | ⚠️ NEEDS-ANALYSIS — issues originales asumían runners OpenAI/Gemini (incompatible con restricción Claude Pro). Pendiente de redefinición: multi-modelo dentro de Claude (sonnet/haiku/opus vía `--model`) u otro enfoque. |
 | phase:scrum-master | pendiente | Agente scrum master: propaga cambios de workflow/CLAUDE.md a todos los repos de dev + scaffolding de proyectos nuevos |
 | phase:arquitecto | pendiente | Agente arquitecto: ingiere ~/docu/homelab como base de conocimiento, asesora y ejecuta despliegues (software de terceros y proyectos propios como tripplanner) |
 | phase:multi-tenant | pendiente | Multi-usuario: tabla de usuarios, API keys cifradas por usuario (Anthropic/GitHub), runner usa key del usuario en lugar de la global. Anthropic no tiene OAuth — el usuario pega su `sk-ant-...` en Settings. |
