@@ -66,7 +66,7 @@ def _list_type(component_type: str) -> list[dict[str, Any]]:
         if p.exists():
             fm, _ = _parse_frontmatter(p.read_text(encoding="utf-8"))
             items.append({
-                "name": "CLAUDE",
+                "name": "CLAUDE.md",
                 "description": fm.get("description"),
                 "modified_at": p.stat().st_mtime,
             })
