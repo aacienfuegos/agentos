@@ -219,8 +219,7 @@ function Editor({
   };
 
   const isAgent = detail.component_type === "agent";
-  const isScript = detail.component_type === "script";
-  const isMarkdown = !isScript;
+  const isMarkdown = detail.component_type !== "script";
 
   return (
     <div className="space-y-4">
@@ -268,12 +267,6 @@ function Editor({
         </span>
         {dirty && <span className="text-xs text-amber-400">sin guardar</span>}
       </div>
-
-      {isScript && (
-        <div className="rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-400">
-          Los cambios en scripts aplican en el próximo arranque del CLI.
-        </div>
-      )}
 
       {error && (
         <div className="rounded-md border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-400">
