@@ -81,6 +81,24 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
         session.add(run)
         session.commit()
 
+        # Inject knowledge agent context if configured
+        ka_cwd: str | None = None
+        if agent.knowledge_agent_id:
+            ka = session.get(KnowledgeAgent, agent.knowledge_agent_id)
+            if ka:
+                from ..runner.knowledge import ensure_knowledge_dir
+                ensure_knowledge_dir(ka)
+                knowledge_ctx = (
+                    f"## Base de conocimiento: {ka.name}\n\n"
+                    f"{ka.description}\n\n"
+                    f"Directorio: `{ka.knowledge_path}`\n\n"
+                    f"Lee `{ka.knowledge_path}/knowledge.md` primero para orientarte. "
+                    f"Usa Read, LS y Grep para explorar el resto de ficheros según necesites."
+                )
+                agent.system_prompt = knowledge_ctx + "\n\n---\n\n" + agent.system_prompt
+                ka_cwd = ka.knowledge_path
+                session.expunge(ka)
+
         # Detach before session closes so attributes remain accessible after expiry
         session.expunge(run)
         session.expunge(agent)
@@ -89,7 +107,7 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
 
     try:
         result = await asyncio.wait_for(
-            runner.run(run, agent),
+            runner.run(run, agent, cwd=ka_cwd),
             timeout=agent.timeout_seconds,
         )
 
