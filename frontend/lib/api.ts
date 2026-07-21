@@ -10,8 +10,19 @@ export interface Agent {
   max_tokens: number;
   timeout_seconds: number;
   is_builtin: boolean;
+  knowledge_agent_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentGenerated {
+  id: string;
+  name: string;
+  description: string;
+  system_prompt: string;
+  tools: string[];
+  model: string;
+  knowledge_agent_id: string | null;
 }
 
 export interface Run {
@@ -199,6 +210,8 @@ export const api = {
   agents: {
     list: () => apiFetch<Agent[]>("/api/agents"),
     get: (id: string) => apiFetch<Agent>(`/api/agents/${id}`),
+    generate: (description: string) =>
+      apiFetch<AgentGenerated>("/api/agents/generate", { method: "POST", body: JSON.stringify({ description }) }),
     create: (data: Partial<Agent>) =>
       apiFetch<Agent>("/api/agents", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: Partial<Agent>) =>

@@ -27,6 +27,7 @@ class AgentDefinition(SQLModel, table=True):
     max_tokens: int = 4096
     timeout_seconds: int = 300
     is_builtin: bool = False
+    knowledge_agent_id: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
