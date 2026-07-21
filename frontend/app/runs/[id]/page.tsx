@@ -163,12 +163,6 @@ export default function RunDetail() {
                 <span>{(totalTokens / 1000).toFixed(1)}k tokens</span>
               </>
             )}
-            {run.cost_usd !== null && (
-              <>
-                <MetaDot />
-                <span>${run.cost_usd.toFixed(4)}</span>
-              </>
-            )}
           </div>
         </div>
 
