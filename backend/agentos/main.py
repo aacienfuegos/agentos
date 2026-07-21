@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 from .config import settings
 from .database import create_db_and_tables, engine
 from .api import agents, runs, schedules, stream, stats, webhooks, auth, knowledge_agents
-from .api import api_keys, execute
+from .api import api_keys, execute, harness
 from .api.auth import verify_token
 from .models import ApiKey
 from .worker.scheduler import start_scheduler, stop_scheduler
@@ -108,6 +108,7 @@ app.include_router(webhooks.router, prefix="/api/webhooks", tags=["webhooks"])
 app.include_router(knowledge_agents.router, prefix="/api/knowledge-agents", tags=["knowledge-agents"])
 app.include_router(api_keys.router, prefix="/api/api-keys", tags=["api-keys"])
 app.include_router(execute.router, prefix="/api/execute", tags=["execute"])
+app.include_router(harness.router, prefix="/api/harness", tags=["harness"])
 
 
 @app.get("/api/health")

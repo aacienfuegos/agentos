@@ -170,6 +170,31 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export type HarnessComponentType = "claude_md" | "rule" | "agent" | "skill" | "context" | "script";
+
+export interface HarnessComponentSummary {
+  name: string;
+  description: string | null;
+  modified_at: number;
+}
+
+export interface HarnessComponentDetail {
+  component_type: HarnessComponentType;
+  name: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  modified_at: number;
+}
+
+export interface HarnessListResponse {
+  claude_md: HarnessComponentSummary[];
+  rule: HarnessComponentSummary[];
+  agent: HarnessComponentSummary[];
+  skill: HarnessComponentSummary[];
+  context: HarnessComponentSummary[];
+  script: HarnessComponentSummary[];
+}
+
 export const api = {
   agents: {
     list: () => apiFetch<Agent[]>("/api/agents"),
@@ -216,6 +241,28 @@ export const api = {
       apiFetch<ApiKeyCreated>("/api/api-keys", { method: "POST", body: JSON.stringify({ name }) }),
     delete: (id: string) =>
       apiFetch<void>(`/api/api-keys/${id}`, { method: "DELETE" }),
+  },
+  harness: {
+    list: () => apiFetch<HarnessListResponse>("/api/harness"),
+    get: (type: HarnessComponentType, name: string) =>
+      apiFetch<HarnessComponentDetail>(`/api/harness/${type}/${name}`),
+    create: (type: HarnessComponentType, name: string, content: string) =>
+      apiFetch<HarnessComponentDetail>(`/api/harness/${type}`, {
+        method: "POST",
+        body: JSON.stringify({ name, content }),
+      }),
+    update: (type: HarnessComponentType, name: string, content: string) =>
+      apiFetch<HarnessComponentDetail>(`/api/harness/${type}/${name}`, {
+        method: "PUT",
+        body: JSON.stringify({ content }),
+      }),
+    delete: (type: HarnessComponentType, name: string) =>
+      apiFetch<void>(`/api/harness/${type}/${name}`, { method: "DELETE" }),
+    generate: (type: HarnessComponentType, description: string) =>
+      apiFetch<{ content: string }>("/api/harness/generate", {
+        method: "POST",
+        body: JSON.stringify({ component_type: type, description }),
+      }),
   },
   execute: (req: ExecuteRequest) =>
     apiFetch<ExecuteResponse | ExecuteAsyncResponse>("/api/execute", {
