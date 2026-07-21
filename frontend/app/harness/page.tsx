@@ -187,10 +187,12 @@ function Editor({
   detail,
   onSave,
   onBack,
+  isSingleton,
 }: {
   detail: HarnessComponentDetail;
   onSave: (content: string) => Promise<void>;
   onBack: () => void;
+  isSingleton?: boolean;
 }) {
   const [content, setContent] = useState(detail.content);
   const [saving, setSaving] = useState(false);
@@ -223,12 +225,16 @@ function Editor({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <button
-          onClick={handleBack}
-          className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
-        >
-          ← Volver
-        </button>
+        <div>
+          {!isSingleton && (
+            <button
+              onClick={handleBack}
+              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
+            >
+              ← Volver
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           {isMarkdown && !isAgent && (
             <button
@@ -533,6 +539,14 @@ function HarnessInner() {
 
   useEffect(() => { load(); }, [load]);
 
+  // For singleton tabs (claude_md), skip the list and go straight to the editor
+  useEffect(() => {
+    const info = TYPES.find((t) => t.key === activeType);
+    if (info?.singleton && !selectedName) {
+      router.replace(`/harness?type=${activeType}&name=CLAUDE.md`);
+    }
+  }, [activeType, selectedName, router]);
+
   useEffect(() => {
     if (!selectedName) { setDetail(null); return; }
     if (selectedName === prevName.current) return;
@@ -596,7 +610,7 @@ function HarnessInner() {
       )}
 
       {/* Type tabs */}
-      <div className="flex items-center gap-0.5 border-b border-zinc-800 -mb-3">
+      <div className="flex items-center gap-0.5 border-b border-zinc-800">
         {TYPES.map((t) => (
           <button
             key={t.key}
@@ -628,6 +642,7 @@ function HarnessInner() {
           detail={detail}
           onSave={handleSave}
           onBack={goBack}
+          isSingleton={typeInfo.singleton}
         />
       ) : (
         <ComponentList
