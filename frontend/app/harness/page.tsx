@@ -32,7 +32,7 @@ const AVAILABLE_TOOLS = [
   "Bash", "WebFetch", "WebSearch", "Task",
 ];
 
-const GENERATE_TYPES: HarnessComponentType[] = ["agent", "skill", "rule", "context"];
+const GENERATE_TYPES: HarnessComponentType[] = ["agent", "skill", "rule", "context", "script"];
 
 const PLACEHOLDERS: Partial<Record<HarnessComponentType, string>> = {
   rule: "# Mi regla\n\n## Principios\n\n- ...",

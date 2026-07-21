@@ -233,6 +233,26 @@ Include relevant facts, patterns, and notes.
 User request: {description}
 
 Return ONLY the complete markdown content. No explanations, no markdown code blocks wrapping the content.""",
+
+    "script": """Generate a bash script for Claude Code's scripts directory.
+
+Format EXACTLY as follows:
+#!/usr/bin/env bash
+set -euo pipefail
+
+# <one-line description of what the script does>
+
+<script body>
+
+Rules:
+- Use set -euo pipefail
+- No hardcoded credentials or secrets
+- Use descriptive variable names
+- Prefer portable POSIX constructs where possible
+
+User request: {description}
+
+Return ONLY the complete script content. No explanations, no markdown code blocks.""",
 }
 
 
