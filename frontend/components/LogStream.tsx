@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { diffLines } from "diff";
 import { Copy, Check, ChevronDown, ChevronRight, ArrowDown } from "lucide-react";
 import { api, LogEntry } from "@/lib/api";
@@ -104,12 +105,15 @@ const mdComponents: Components = {
   h2({ children }) { return <h2 className="text-lg font-semibold text-zinc-200 mt-4 mb-1.5 leading-tight">{children}</h2>; },
   h3({ children }) { return <h3 className="text-base font-semibold text-zinc-300 mt-3 mb-1 leading-tight">{children}</h3>; },
   h4({ children }) { return <h4 className="text-sm font-medium text-zinc-300 mt-2 mb-0.5">{children}</h4>; },
+  h5({ children }) { return <h5 className="text-sm font-medium text-zinc-400 mt-2 mb-0.5">{children}</h5>; },
+  h6({ children }) { return <h6 className="text-xs font-medium text-zinc-500 mt-1.5 mb-0.5 uppercase tracking-wide">{children}</h6>; },
   p({ children }) { return <p className="mb-3 text-zinc-300 leading-relaxed">{children}</p>; },
   ul({ children }) { return <ul className="list-disc pl-5 my-2 space-y-1 text-zinc-300">{children}</ul>; },
   ol({ children }) { return <ol className="list-decimal pl-5 my-2 space-y-1 text-zinc-300">{children}</ol>; },
   li({ children }) { return <li className="leading-relaxed">{children}</li>; },
   strong({ children }) { return <strong className="text-zinc-100 font-semibold">{children}</strong>; },
   em({ children }) { return <em className="text-zinc-400 italic">{children}</em>; },
+  del({ children }) { return <del className="text-zinc-600 line-through">{children}</del>; },
   a({ children, href }) {
     return <a href={href} className="text-amber-400 hover:text-amber-300 underline" target="_blank" rel="noopener noreferrer">{children}</a>;
   },
@@ -117,12 +121,29 @@ const mdComponents: Components = {
     return <blockquote className="border-l-2 border-zinc-700 pl-3 text-zinc-500 italic my-2">{children}</blockquote>;
   },
   hr() { return <hr className="border-zinc-800 my-4" />; },
+  table({ children }) {
+    return (
+      <div className="my-3 overflow-x-auto rounded-lg border border-white/[0.06]">
+        <table className="w-full text-sm border-collapse">{children}</table>
+      </div>
+    );
+  },
+  thead({ children }) { return <thead className="bg-white/[0.04]">{children}</thead>; },
+  tbody({ children }) { return <tbody className="divide-y divide-white/[0.04]">{children}</tbody>; },
+  tr({ children }) { return <tr className="hover:bg-white/[0.02] transition-colors">{children}</tr>; },
+  th({ children }) {
+    return <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap">{children}</th>;
+  },
+  td({ children }) { return <td className="px-4 py-2.5 text-zinc-300 align-top">{children}</td>; },
+  input({ checked, disabled }) {
+    return <input type="checkbox" checked={checked ?? false} disabled={disabled} readOnly className="mr-1.5 accent-amber-400" />;
+  },
 };
 
 export function InfoMessage({ message }: { message: string }) {
   return (
     <div className="text-sm leading-relaxed">
-      <ReactMarkdown components={mdComponents}>{message}</ReactMarkdown>
+      <ReactMarkdown components={mdComponents} remarkPlugins={[remarkGfm]}>{message}</ReactMarkdown>
     </div>
   );
 }
