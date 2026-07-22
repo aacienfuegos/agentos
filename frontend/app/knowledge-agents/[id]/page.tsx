@@ -884,7 +884,7 @@ export default function KnowledgeAgentDetail() {
                         <button
                           onClick={() => setFilePreview((v) => !v)}
                           title={filePreview ? "Ver sin formato" : "Ver formateado"}
-                          className={`flex items-center gap-1 text-xs font-mono transition-colors ${filePreview ? "text-amber-400" : "text-zinc-600 hover:text-zinc-300"}`}
+                          className={`flex items-center gap-1 text-xs font-mono transition-colors ${!filePreview ? "text-amber-400" : "text-zinc-600 hover:text-zinc-300"}`}
                         >
                           <Pencil className="w-3 h-3" />
                           editar
