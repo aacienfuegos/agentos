@@ -118,7 +118,7 @@ const mdComponents: Components = {
   hr() { return <hr className="border-zinc-800 my-2" />; },
 };
 
-function InfoMessage({ message }: { message: string }) {
+export function InfoMessage({ message }: { message: string }) {
   return (
     <div className="text-xs leading-relaxed">
       <ReactMarkdown components={mdComponents}>{message}</ReactMarkdown>

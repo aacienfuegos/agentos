@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, KnowledgeAgent, KnowledgeFile, Run, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
+import { InfoMessage } from "@/components/LogStream";
 import { fmtTokens, generateUUID } from "@/lib/utils";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
@@ -665,7 +666,7 @@ export default function KnowledgeAgentDetail() {
                     </div>
                   ) : (
                     <>
-                      <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{msg.content}</pre>
+                      <InfoMessage message={msg.content} />
                       {msg.role === "assistant" && (
                         <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/[0.04] text-[11px] font-mono text-zinc-700">
                           {msg.status && <span className={STATUS_TEXT[msg.status]}>{msg.status}</span>}
