@@ -73,6 +73,15 @@ function FileTree({
   selected: string | null;
   onSelect: (path: string) => void;
 }) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  const toggle = (path: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.has(path) ? next.delete(path) : next.add(path);
+      return next;
+    });
+
   const renderEntries = (parentPath: string, depth: number): React.ReactNode => {
     const entries = files.filter((f) => {
       const parts = f.path.split("/");
@@ -87,16 +96,18 @@ function FileTree({
       const name = f.path.split("/").at(-1)!;
       const indent = depth * 12;
       if (f.is_dir) {
+        const isCollapsed = collapsed.has(f.path);
         return (
           <div key={f.path}>
-            <div
-              className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono text-zinc-600"
+            <button
+              onClick={() => toggle(f.path)}
+              className="w-full flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors text-left"
               style={{ paddingLeft: `${8 + indent}px` }}
             >
-              <span>▸</span>
+              <span className="shrink-0">{isCollapsed ? "▸" : "▾"}</span>
               <span>{name}/</span>
-            </div>
-            {renderEntries(f.path, depth + 1)}
+            </button>
+            {!isCollapsed && renderEntries(f.path, depth + 1)}
           </div>
         );
       }
