@@ -880,16 +880,6 @@ export default function KnowledgeAgentDetail() {
                   <div className="flex items-center justify-between shrink-0">
                     <span className="text-[11px] font-mono text-zinc-500">{selectedFile}</span>
                     <div className="flex items-center gap-3">
-                      {(fileExt(selectedFile) === "md" || fileHighlightLang(selectedFile)) && (
-                        <button
-                          onClick={() => setFilePreview((v) => !v)}
-                          title={filePreview ? "Ver sin formato" : "Ver formateado"}
-                          className={`flex items-center gap-1 text-xs font-mono transition-colors ${!filePreview ? "text-amber-400" : "text-zinc-600 hover:text-zinc-300"}`}
-                        >
-                          <Pencil className="w-3 h-3" />
-                          editar
-                        </button>
-                      )}
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(fileContent);
@@ -901,19 +891,29 @@ export default function KnowledgeAgentDetail() {
                         {copiedFile ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                         {copiedFile ? "copiado" : "copiar"}
                       </button>
-                      <button
-                        onClick={deleteFile}
-                        disabled={deletingFile}
-                        className="text-[11px] font-mono text-red-500/50 hover:text-red-400 transition-colors disabled:opacity-30"
-                      >
-                        {deletingFile ? "eliminando···" : "eliminar"}
-                      </button>
+                      {(fileExt(selectedFile) === "md" || fileHighlightLang(selectedFile)) && (
+                        <button
+                          onClick={() => setFilePreview((v) => !v)}
+                          title={filePreview ? "Ver sin formato" : "Ver formateado"}
+                          className={`flex items-center gap-1 text-xs font-mono transition-colors ${!filePreview ? "text-amber-400" : "text-zinc-600 hover:text-zinc-300"}`}
+                        >
+                          <Pencil className="w-3 h-3" />
+                          editar
+                        </button>
+                      )}
                       <button
                         onClick={saveFile}
                         disabled={savingFile || !fileDirty || filePreview}
                         className="text-xs font-mono text-amber-400 hover:text-amber-300 px-3 py-1 border border-amber-400/20 hover:border-amber-400/40 rounded-md transition-all disabled:opacity-30"
                       >
                         {savingFile ? "guardando···" : "guardar"}
+                      </button>
+                      <button
+                        onClick={deleteFile}
+                        disabled={deletingFile}
+                        className="text-[11px] font-mono text-red-500/50 hover:text-red-400 transition-colors disabled:opacity-30"
+                      >
+                        {deletingFile ? "eliminando···" : "eliminar"}
                       </button>
                     </div>
                   </div>
