@@ -68,19 +68,15 @@ function FileTree({
   files,
   selected,
   onSelect,
+  collapsed,
+  onToggle,
 }: {
   files: KnowledgeFile[];
   selected: string | null;
   onSelect: (path: string) => void;
+  collapsed: Set<string>;
+  onToggle: (path: string) => void;
 }) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-
-  const toggle = (path: string) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      next.has(path) ? next.delete(path) : next.add(path);
-      return next;
-    });
 
   const renderEntries = (parentPath: string, depth: number): React.ReactNode => {
     const entries = files.filter((f) => {
@@ -100,7 +96,7 @@ function FileTree({
         return (
           <div key={f.path}>
             <button
-              onClick={() => toggle(f.path)}
+              onClick={() => onToggle(f.path)}
               className="w-full flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors text-left"
               style={{ paddingLeft: `${8 + indent}px` }}
             >
@@ -165,6 +161,7 @@ export default function KnowledgeAgentDetail() {
   const [showNewFile, setShowNewFile] = useState(false);
   const [filePreview, setFilePreview] = useState(true);
   const [copiedFile, setCopiedFile] = useState(false);
+  const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
   // Upload state
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ written: string[]; errors: string[] } | null>(null);
@@ -812,7 +809,24 @@ export default function KnowledgeAgentDetail() {
                   {agent.knowledge_path.replace(/^\/data\/knowledge\//, "~/")}
                 </span>
                 <div className="flex items-center gap-1 shrink-0">
-                  {/* Upload menu */}
+                  {files.some((f) => f.is_dir) && (
+                    <>
+                      <button
+                        onClick={() => setCollapsedDirs(new Set(files.filter((f) => f.is_dir).map((f) => f.path)))}
+                        className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors"
+                        title="Colapsar todo"
+                      >
+                        ⊟
+                      </button>
+                      <button
+                        onClick={() => setCollapsedDirs(new Set())}
+                        className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors"
+                        title="Expandir todo"
+                      >
+                        ⊕
+                      </button>
+                    </>
+                  )}
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploading}
@@ -879,7 +893,17 @@ export default function KnowledgeAgentDetail() {
                     <p className="text-[10px] text-zinc-800">arrastra aquí o usa ↑</p>
                   </div>
                 ) : (
-                  <FileTree files={files} selected={selectedFile} onSelect={selectFile} />
+                  <FileTree
+                    files={files}
+                    selected={selectedFile}
+                    onSelect={selectFile}
+                    collapsed={collapsedDirs}
+                    onToggle={(path) => setCollapsedDirs((prev) => {
+                      const next = new Set(prev);
+                      next.has(path) ? next.delete(path) : next.add(path);
+                      return next;
+                    })}
+                  />
                 )}
               </div>
 
