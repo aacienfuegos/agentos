@@ -6,7 +6,7 @@ import Link from "next/link";
 import { api, KnowledgeAgent, KnowledgeFile, Run, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
 import { InfoMessage } from "@/components/LogStream";
 import { fmtTokens, generateUUID } from "@/lib/utils";
-import { Copy, Check, Code, Pencil, Save, Trash2 } from "lucide-react";
+import { Copy, Check, Code, Pencil, Save, Trash2, X } from "lucide-react";
 import hljs from "highlight.js";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
@@ -893,6 +893,15 @@ export default function KnowledgeAgentDetail() {
                       </button>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      {!filePreview && (
+                        <button
+                          onClick={() => { setEditingContent(fileContent); setFilePreview(true); }}
+                          title="Descartar cambios"
+                          className="transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5 text-zinc-700 hover:text-zinc-300" />
+                        </button>
+                      )}
                       {(fileExt(selectedFile) === "md" || fileHighlightLang(selectedFile)) ? (
                         <button
                           onClick={async () => {
