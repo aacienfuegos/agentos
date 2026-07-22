@@ -70,13 +70,23 @@ function FileTree({
   onSelect,
   collapsed,
   onToggle,
+  search,
 }: {
   files: KnowledgeFile[];
   selected: string | null;
   onSelect: (path: string) => void;
   collapsed: Set<string>;
   onToggle: (path: string) => void;
+  search: string;
 }) {
+  const query = search.toLowerCase();
+
+  const hasMatch = (path: string): boolean => {
+    const file = files.find((f) => f.path === path);
+    if (!file) return false;
+    if (!file.is_dir) return file.path.toLowerCase().includes(query);
+    return files.some((f) => !f.is_dir && f.path.startsWith(path + "/") && f.path.toLowerCase().includes(query));
+  };
 
   const renderEntries = (parentPath: string, depth: number): React.ReactNode => {
     const entries = files.filter((f) => {
@@ -91,12 +101,13 @@ function FileTree({
     return entries.map((f) => {
       const name = f.path.split("/").at(-1)!;
       const indent = depth * 12;
+      if (query && !hasMatch(f.path)) return null;
       if (f.is_dir) {
-        const isCollapsed = collapsed.has(f.path);
+        const isCollapsed = !query && collapsed.has(f.path);
         return (
           <div key={f.path}>
             <button
-              onClick={() => onToggle(f.path)}
+              onClick={() => !query && onToggle(f.path)}
               className="w-full flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors text-left"
               style={{ paddingLeft: `${8 + indent}px` }}
             >
@@ -162,6 +173,7 @@ export default function KnowledgeAgentDetail() {
   const [filePreview, setFilePreview] = useState(true);
   const [copiedFile, setCopiedFile] = useState(false);
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
+  const [fileSearch, setFileSearch] = useState("");
   // Upload state
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ written: string[]; errors: string[] } | null>(null);
@@ -853,6 +865,16 @@ export default function KnowledgeAgentDetail() {
                 </div>
               </div>
 
+              {files.length > 0 && (
+                <input
+                  value={fileSearch}
+                  onChange={(e) => setFileSearch(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Escape") setFileSearch(""); }}
+                  placeholder="filtrar…"
+                  className="shrink-0 w-full bg-transparent border-b border-white/[0.05] px-2 py-0.5 text-[11px] font-mono text-zinc-400 placeholder-zinc-700 focus:outline-none focus:border-amber-400/20"
+                />
+              )}
+
               {showNewFile && (
                 <div className="flex gap-1 shrink-0">
                   <input
@@ -903,6 +925,7 @@ export default function KnowledgeAgentDetail() {
                       next.has(path) ? next.delete(path) : next.add(path);
                       return next;
                     })}
+                    search={fileSearch}
                   />
                 )}
               </div>
