@@ -6,7 +6,7 @@ import Link from "next/link";
 import { api, KnowledgeAgent, KnowledgeFile, Run, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
 import { InfoMessage } from "@/components/LogStream";
 import { fmtTokens, generateUUID } from "@/lib/utils";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, Code } from "lucide-react";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
 
@@ -689,9 +689,10 @@ export default function KnowledgeAgentDetail() {
                               setTimeout(() => setCopiedMsg((c) => c === i ? null : c), 2000);
                             });
                           }}
-                          className="ml-auto transition-colors hover:text-zinc-500"
+                          className="ml-auto flex items-center gap-1.5 transition-colors hover:text-zinc-500"
                         >
                           {copiedMsg === i ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          {copiedMsg === i ? "copiado" : "copiar"}
                         </button>
                         <button
                           onClick={() => setRawMessages((prev) => {
@@ -699,8 +700,9 @@ export default function KnowledgeAgentDetail() {
                             next.has(i) ? next.delete(i) : next.add(i);
                             return next;
                           })}
-                          className={`transition-colors ${rawMessages.has(i) ? "text-amber-400" : "hover:text-zinc-500"}`}
+                          className={`flex items-center gap-1 transition-colors ${rawMessages.has(i) ? "text-amber-400" : "hover:text-zinc-500"}`}
                         >
+                          <Code className="w-3 h-3" />
                           raw
                         </button>
                       </div>
