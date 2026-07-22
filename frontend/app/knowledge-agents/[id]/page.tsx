@@ -672,27 +672,25 @@ export default function KnowledgeAgentDetail() {
                       ) : (
                         <InfoMessage message={msg.content} />
                       )}
-                      {msg.role === "assistant" && (
-                        <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/[0.04] text-[11px] font-mono text-zinc-700">
-                          {msg.status && <span className={STATUS_TEXT[msg.status]}>{msg.status}</span>}
-                          {msg.tokens != null && msg.tokens > 0 && <span>{fmtTokens(msg.tokens)} tokens</span>}
-                          {msg.run_id && (
-                            <Link href={`/runs/${msg.run_id}`} className="hover:text-zinc-500 transition-colors">
-                              ver run →
-                            </Link>
-                          )}
-                          <button
-                            onClick={() => setRawMessages((prev) => {
-                              const next = new Set(prev);
-                              next.has(i) ? next.delete(i) : next.add(i);
-                              return next;
-                            })}
-                            className={`transition-colors ${rawMessages.has(i) ? "text-amber-400" : "hover:text-zinc-500"}`}
-                          >
-                            raw
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/[0.04] text-[11px] font-mono text-zinc-700">
+                        {msg.role === "assistant" && msg.status && <span className={STATUS_TEXT[msg.status]}>{msg.status}</span>}
+                        {msg.role === "assistant" && msg.tokens != null && msg.tokens > 0 && <span>{fmtTokens(msg.tokens)} tokens</span>}
+                        {msg.role === "assistant" && msg.run_id && (
+                          <Link href={`/runs/${msg.run_id}`} className="hover:text-zinc-500 transition-colors">
+                            ver run →
+                          </Link>
+                        )}
+                        <button
+                          onClick={() => setRawMessages((prev) => {
+                            const next = new Set(prev);
+                            next.has(i) ? next.delete(i) : next.add(i);
+                            return next;
+                          })}
+                          className={`ml-auto transition-colors ${rawMessages.has(i) ? "text-amber-400" : "hover:text-zinc-500"}`}
+                        >
+                          raw
+                        </button>
+                      </div>
                     </>
                   )}
                 </div>
