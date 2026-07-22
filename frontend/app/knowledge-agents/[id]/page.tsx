@@ -6,7 +6,7 @@ import Link from "next/link";
 import { api, KnowledgeAgent, KnowledgeFile, Run, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
 import { InfoMessage } from "@/components/LogStream";
 import { fmtTokens, generateUUID } from "@/lib/utils";
-import { Copy, Check, Code, Pencil, Save, Trash2, X } from "lucide-react";
+import { Copy, Check, Code, Pencil, RotateCcw, Save, Trash2, Eye } from "lucide-react";
 import hljs from "highlight.js";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
@@ -503,6 +503,15 @@ export default function KnowledgeAgentDetail() {
     }
   };
 
+  const fileDirty = editingContent !== fileContent;
+
+  useEffect(() => {
+    if (!fileDirty) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [fileDirty]);
+
   if (!agent) return <div className="text-zinc-500 text-sm p-8">Cargando…</div>;
 
   const agentTools = agent.tools ?? ["Read", "Write"];
@@ -514,8 +523,6 @@ export default function KnowledgeAgentDetail() {
     configForm.knowledge_path !== agent.knowledge_path ||
     configForm.tools.length !== agentTools.length ||
     configForm.tools.some((t) => !agentTools.includes(t));
-
-  const fileDirty = editingContent !== fileContent;
 
   return (
     <div className="flex flex-col h-[calc(100dvh-120px)] gap-4">
@@ -893,45 +900,55 @@ export default function KnowledgeAgentDetail() {
                       </button>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {!filePreview && (
-                        <button
-                          onClick={() => { setEditingContent(fileContent); setFilePreview(true); }}
-                          title="Descartar cambios"
-                          className="transition-colors"
-                        >
-                          <X className="w-3.5 h-3.5 text-zinc-700 hover:text-zinc-300" />
-                        </button>
-                      )}
-                      {(fileExt(selectedFile) === "md" || fileHighlightLang(selectedFile)) ? (
-                        <button
-                          onClick={async () => {
-                            if (filePreview) {
-                              setFilePreview(false);
-                            } else if (fileDirty) {
-                              await saveFile();
-                              setFilePreview(true);
-                            } else {
-                              setFilePreview(true);
-                            }
-                          }}
-                          disabled={savingFile}
-                          title={filePreview ? "Editar" : fileDirty ? "Guardar" : "Volver al preview"}
-                          className="transition-colors disabled:opacity-30"
-                        >
-                          {!filePreview && fileDirty
-                            ? <Save className="w-3.5 h-3.5 text-amber-400 hover:text-amber-300" />
-                            : <Pencil className={`w-3.5 h-3.5 ${!filePreview ? "text-amber-400 hover:text-amber-300" : "text-zinc-600 hover:text-zinc-300"}`} />
-                          }
-                        </button>
-                      ) : (
-                        <button
-                          onClick={saveFile}
-                          disabled={savingFile || !fileDirty}
-                          title="Guardar"
-                          className="transition-colors disabled:opacity-30"
-                        >
-                          <Save className="w-3.5 h-3.5 text-zinc-600 hover:text-zinc-300" />
-                        </button>
+                      {(fileExt(selectedFile) === "md" || fileHighlightLang(selectedFile)) && (
+                        filePreview ? (
+                          <>
+                            <button
+                              onClick={() => setFilePreview(false)}
+                              title="Editar"
+                              className="transition-colors"
+                            >
+                              <Pencil className="w-3.5 h-3.5 text-zinc-600 hover:text-zinc-300" />
+                            </button>
+                            {fileDirty && (
+                              <button
+                                onClick={saveFile}
+                                disabled={savingFile}
+                                title="Guardar"
+                                className="transition-colors disabled:opacity-30"
+                              >
+                                <Save className="w-3.5 h-3.5 text-amber-400 hover:text-amber-300" />
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => setFilePreview(true)}
+                              title="Volver al preview"
+                              className="transition-colors"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-zinc-600 hover:text-zinc-300" />
+                            </button>
+                            {fileDirty && (
+                              <button
+                                onClick={() => { setEditingContent(fileContent); setFilePreview(true); }}
+                                title="Descartar cambios"
+                                className="transition-colors"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5 text-amber-400 hover:text-amber-300" />
+                              </button>
+                            )}
+                            <button
+                              onClick={async () => { await saveFile(); setFilePreview(true); }}
+                              disabled={savingFile}
+                              title="Guardar"
+                              className="transition-colors disabled:opacity-30"
+                            >
+                              <Save className={`w-3.5 h-3.5 ${fileDirty ? "text-amber-400 hover:text-amber-300" : "text-zinc-600 hover:text-zinc-300"}`} />
+                            </button>
+                          </>
+                        )
                       )}
                       <button
                         onClick={deleteFile}
@@ -949,12 +966,12 @@ export default function KnowledgeAgentDetail() {
                     </div>
                   ) : filePreview && fileExt(selectedFile) === "md" ? (
                     <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] px-4 py-4 text-zinc-300">
-                      <InfoMessage message={fileContent} />
+                      <InfoMessage message={editingContent} />
                     </div>
                   ) : filePreview && fileHighlightLang(selectedFile) ? (
                     <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] bg-zinc-900">
                       <pre className="px-4 py-4 text-sm leading-relaxed overflow-x-auto">
-                        <code dangerouslySetInnerHTML={{ __html: hljs.highlight(fileContent, { language: fileHighlightLang(selectedFile)! }).value }} />
+                        <code dangerouslySetInnerHTML={{ __html: hljs.highlight(editingContent, { language: fileHighlightLang(selectedFile)! }).value }} />
                       </pre>
                     </div>
                   ) : (
