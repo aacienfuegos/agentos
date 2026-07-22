@@ -1,5 +1,7 @@
 import io
 import logging
+import math
+import re
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -291,6 +293,187 @@ async def upload_knowledge_files(
     session.commit()
 
     return {"written": written, "errors": errors}
+
+
+# ---------------------------------------------------------------------------
+# Search (BM25 full-text search over knowledge files)
+# ---------------------------------------------------------------------------
+
+class SearchMatch(BaseModel):
+    line_number: int
+    line: str
+    context_before: list[str]
+    context_after: list[str]
+
+
+class SearchResult(BaseModel):
+    file: str
+    score: float
+    matches: list[SearchMatch]
+
+
+def _parse_query(q: str) -> tuple[list[str], list[str], bool]:
+    """Parse query into (terms, phrases, case_sensitive).
+
+    Quoted strings → phrases (exact substring).
+    Remaining words → individual terms (all must appear in the document).
+    Smart case: any uppercase char → case-sensitive search.
+    """
+    case_sensitive = any(c.isupper() for c in q)
+    phrases: list[str] = [m.group(1) for m in re.finditer(r'"([^"]+)"', q)]
+    remaining = re.sub(r'"[^"]+"', ' ', q)
+    terms = [w for w in remaining.split() if w]
+    return terms, phrases, case_sensitive
+
+
+def _count_substr(text: str, sub: str) -> int:
+    # str.count() skips overlapping occurrences; step by 1 to catch them all
+    count = start = 0
+    while (idx := text.find(sub, start)) != -1:
+        count += 1
+        start = idx + 1
+    return count
+
+
+def _extract_snippets(
+    lines: list[str],
+    terms: list[str],
+    phrases: list[str],
+    case_sensitive: bool,
+    context: int = 2,
+    max_snippets: int = 5,
+) -> list[SearchMatch]:
+    """Return the best lines by needle density, re-sorted to document order.
+
+    Density (total needle occurrences on that line) picks the most relevant
+    snippets. Re-sorting by line_number ensures they render top-to-bottom,
+    which is more natural than relevance order for reading.
+    """
+    all_needles = terms + phrases
+
+    scored: list[tuple[int, float]] = []
+    for i, line in enumerate(lines):
+        cmp = line if case_sensitive else line.lower()
+        s = sum(
+            _count_substr(cmp, n if case_sensitive else n.lower())
+            for n in all_needles
+        )
+        if s > 0:
+            scored.append((i, s))
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+    snippets: list[SearchMatch] = []
+    for line_idx, _ in scored[:max_snippets]:
+        snippets.append(SearchMatch(
+            line_number=line_idx + 1,
+            line=lines[line_idx],
+            context_before=lines[max(0, line_idx - context):line_idx],
+            context_after=lines[line_idx + 1:line_idx + 1 + context],
+        ))
+    snippets.sort(key=lambda s: s.line_number)
+    return snippets
+
+
+@router.get("/{agent_id}/search")
+def search_knowledge(agent_id: str, q: str, session: SessionDep) -> list[SearchResult]:
+    """BM25 full-text search over the knowledge directory.
+
+    Query syntax:
+    - "exact phrase"  → exact substring match
+    - word1 word2     → both words must appear anywhere in the document (AND)
+    - SmartCase       → any uppercase char makes the search case-sensitive
+    """
+    agent = session.get(KnowledgeAgent, agent_id)
+    if not agent:
+        raise HTTPException(404, "Knowledge agent not found")
+    q = q.strip()
+    if not q or not agent.knowledge_path:
+        return []
+
+    base = Path(agent.knowledge_path)
+    if not base.exists():
+        return []
+
+    terms, phrases, case_sensitive = _parse_query(q)
+    all_needles = terms + phrases
+    if not all_needles:
+        return []
+
+    # Load all text files (respect the same skip rules as the file browser)
+    corpus: list[tuple[str, str, int]] = []  # (rel_path, text, word_count)
+    for path in sorted(base.rglob("*")):
+        if not path.is_file():
+            continue
+        rel_parts = path.relative_to(base).parts
+        if any(part in _SKIP_DIRS or part.startswith(".") for part in rel_parts):
+            continue
+        if not _is_text(path):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        corpus.append((str(path.relative_to(base)), text, len(text.split())))
+
+    N = len(corpus)
+    if N == 0:
+        return []
+
+    avg_dl = sum(wc for _, _, wc in corpus) / N
+
+    # Okapi BM25 (k1=1.5, b=0.75 are the standard defaults).
+    # k1 controls TF saturation — higher means longer docs get proportionally
+    # more credit for repeated terms. b=0.75 applies mild length normalization.
+    K1 = 1.5
+    B = 0.75
+
+    # First pass: find matching docs, compute per-needle tf and df
+    df: dict[str, int] = {n: 0 for n in all_needles}
+    matching: list[tuple[str, str, int, dict[str, int]]] = []
+
+    for rel, text, word_count in corpus:
+        cmp_text = text if case_sensitive else text.lower()
+        tfs: dict[str, int] = {}
+        all_present = True
+        for needle in all_needles:
+            tf = _count_substr(cmp_text, needle if case_sensitive else needle.lower())
+            if tf == 0:
+                all_present = False
+                break
+            tfs[needle] = tf
+        if all_present:
+            matching.append((rel, text, word_count, tfs))
+            for needle in tfs:
+                df[needle] += 1
+
+    if not matching:
+        return []
+
+    # Second pass: BM25 score
+    results: list[SearchResult] = []
+    for rel, text, word_count, tfs in matching:
+        score = 0.0
+        for needle in all_needles:
+            tf = tfs[needle]
+            doc_freq = max(df.get(needle, 1), 1)
+            # IDF: rare terms score higher; +1 keeps it positive when df ≈ N
+            idf = math.log((N - doc_freq + 0.5) / (doc_freq + 0.5) + 1)
+            # TF with saturation and length normalization
+            tf_norm = tf * (K1 + 1) / (tf + K1 * (1 - B + B * word_count / avg_dl))
+            score += idf * tf_norm
+
+        # Bonus: needle appears in the filename (user usually cares about this)
+        rel_cmp = rel if case_sensitive else rel.lower()
+        for needle in all_needles:
+            if (needle if case_sensitive else needle.lower()) in rel_cmp:
+                score += 2.0
+
+        lines = text.splitlines()
+        snippets = _extract_snippets(lines, terms, phrases, case_sensitive)
+        results.append(SearchResult(file=rel, score=round(score, 3), matches=snippets))
+
+    results.sort(key=lambda r: r.score, reverse=True)
+    return results[:50]
 
 
 # ---------------------------------------------------------------------------
