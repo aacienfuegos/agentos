@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { api, KnowledgeAgent, KnowledgeFile, Run, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
+import { api, KnowledgeAgent, KnowledgeFile, Run, SearchResult, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
 import { InfoMessage } from "@/components/LogStream";
 import { fmtTokens, generateUUID } from "@/lib/utils";
 import { Copy, Check, Code, Pencil, RotateCcw, Save, Trash2, Eye } from "lucide-react";
@@ -58,6 +58,38 @@ interface LiveLogEvent {
   level: string;
   message: string;
   metadata?: Record<string, unknown> | null;
+}
+
+// ---------------------------------------------------------------------------
+// Search helpers
+// ---------------------------------------------------------------------------
+
+function parseSearchTerms(q: string): { terms: string[]; phrases: string[]; caseSensitive: boolean } {
+  const caseSensitive = /[A-Z]/.test(q);
+  const phrases: string[] = [];
+  for (const m of q.matchAll(/"([^"]+)"/g)) phrases.push(m[1]);
+  const remaining = q.replace(/"[^"]+"/g, " ");
+  return { terms: remaining.split(/\s+/).filter(Boolean), phrases, caseSensitive };
+}
+
+function HighlightedLine({
+  text, terms, phrases, caseSensitive,
+}: {
+  text: string; terms: string[]; phrases: string[]; caseSensitive: boolean;
+}) {
+  const needles = [...phrases, ...terms].filter(Boolean).sort((a, b) => b.length - a.length);
+  if (needles.length === 0) return <span>{text}</span>;
+  const pattern = needles.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const parts = text.split(new RegExp(`(${pattern})`, caseSensitive ? "g" : "gi"));
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1
+          ? <mark key={i} className="bg-amber-400/25 text-amber-100 rounded-sm px-0.5 not-italic font-normal">{part}</mark>
+          : <span key={i}>{part}</span>
+      )}
+    </>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +206,9 @@ export default function KnowledgeAgentDetail() {
   const [copiedFile, setCopiedFile] = useState(false);
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
   const [fileSearch, setFileSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [contentSearchQuery, setContentSearchQuery] = useState("");
   // Upload state
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ written: string[]; errors: string[] } | null>(null);
@@ -282,6 +317,25 @@ export default function KnowledgeAgentDetail() {
     setNewFilePath("");
     await loadFiles();
     selectFile(newFilePath.trim());
+  };
+
+  const triggerContentSearch = async (q: string) => {
+    setSearching(true);
+    setContentSearchQuery(q);
+    try {
+      const results = await api.knowledgeAgents.search(id, q);
+      setSearchResults(results);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchResults(null);
+    setContentSearchQuery("");
+    setFileSearch("");
   };
 
   const handleUpload = useCallback(async (inputFiles: FileList | File[]) => {
@@ -868,10 +922,15 @@ export default function KnowledgeAgentDetail() {
               {files.length > 0 && (
                 <input
                   value={fileSearch}
-                  onChange={(e) => setFileSearch(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Escape") setFileSearch(""); }}
-                  placeholder="filtrar…"
-                  className="shrink-0 w-full bg-transparent border-b border-white/[0.05] px-2 py-0.5 text-[11px] font-mono text-zinc-400 placeholder-zinc-700 focus:outline-none focus:border-amber-400/20"
+                  onChange={(e) => { setFileSearch(e.target.value); if (searchResults) setSearchResults(null); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") clearSearch();
+                    if (e.key === "Enter" && fileSearch.trim()) triggerContentSearch(fileSearch.trim());
+                  }}
+                  placeholder={searching ? "buscando···" : "filtrar… (Enter: buscar contenido)"}
+                  className={`shrink-0 w-full bg-transparent border-b px-2 py-0.5 text-[11px] font-mono text-zinc-400 placeholder-zinc-700 focus:outline-none transition-colors ${
+                    searchResults !== null ? "border-amber-400/30" : "border-white/[0.05] focus:border-amber-400/20"
+                  }`}
                 />
               )}
 
@@ -938,9 +997,125 @@ export default function KnowledgeAgentDetail() {
               </button>
             </div>
 
-            {/* Editor panel */}
+            {/* Editor / search results panel */}
             <div className="flex-1 min-w-0 flex flex-col gap-2 min-h-0">
-              {selectedFile ? (
+              {searchResults !== null ? (() => {
+                const { terms, phrases, caseSensitive } = parseSearchTerms(contentSearchQuery);
+                const totalMatches = searchResults.reduce((s, r) => s + r.matches.length, 0);
+                return (
+                  <>
+                    {/* Header */}
+                    <div className="flex items-center justify-between shrink-0 px-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {searching ? (
+                          <span className="text-[11px] font-mono text-zinc-500 animate-pulse">buscando···</span>
+                        ) : (
+                          <>
+                            <span className="text-[11px] font-mono text-zinc-400">
+                              <span className="text-amber-400/70">"{contentSearchQuery}"</span>
+                            </span>
+                            <span className="text-[11px] font-mono text-zinc-600">
+                              {searchResults.length} fichero{searchResults.length !== 1 ? "s" : ""} · {totalMatches} coincidencia{totalMatches !== 1 ? "s" : ""}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <button
+                        onClick={clearSearch}
+                        className="text-[11px] font-mono text-zinc-700 hover:text-zinc-400 transition-colors shrink-0 ml-2"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {/* Results list */}
+                    <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-0.5">
+                      {!searching && searchResults.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-40 gap-2">
+                          <p className="text-xs font-mono text-zinc-700">sin resultados para "{contentSearchQuery}"</p>
+                          <p className="text-[11px] font-mono text-zinc-800">
+                            Prueba con menos palabras o usa comillas para frases exactas
+                          </p>
+                        </div>
+                      )}
+                      {searchResults.map((result) => {
+                        const dirPart = result.file.includes("/")
+                          ? result.file.slice(0, result.file.lastIndexOf("/") + 1)
+                          : "";
+                        const namePart = result.file.includes("/")
+                          ? result.file.slice(result.file.lastIndexOf("/") + 1)
+                          : result.file;
+                        return (
+                          <div key={result.file} className="rounded-xl border border-white/[0.05] overflow-hidden bg-zinc-900/30">
+                            {/* File header */}
+                            <button
+                              onClick={() => {
+                                selectFile(result.file);
+                                clearSearch();
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.03] transition-colors group"
+                            >
+                              <span className="text-[11px] font-mono min-w-0 truncate flex-1">
+                                {dirPart && <span className="text-zinc-600">{dirPart}</span>}
+                                <span className="text-amber-300/80 font-medium">{namePart}</span>
+                              </span>
+                              <span className="text-[10px] font-mono text-zinc-700 shrink-0 tabular-nums">
+                                {result.matches.length} match{result.matches.length !== 1 ? "es" : ""}
+                              </span>
+                              <span className="text-[10px] font-mono text-zinc-800 group-hover:text-zinc-500 transition-colors shrink-0">→</span>
+                            </button>
+
+                            {/* Match snippets */}
+                            {result.matches.length > 0 && (
+                              <div className="border-t border-white/[0.04]">
+                                {result.matches.map((match, mi) => (
+                                  <div
+                                    key={match.line_number}
+                                    className={`font-mono text-[11px] leading-relaxed ${mi > 0 ? "border-t border-white/[0.04]" : ""}`}
+                                  >
+                                    {/* Context before */}
+                                    {match.context_before.map((l, i) => (
+                                      <div key={`b${i}`} className="flex items-start gap-0">
+                                        <span className="text-zinc-800 w-10 text-right shrink-0 px-2 py-0.5 select-none tabular-nums">
+                                          {match.line_number - match.context_before.length + i}
+                                        </span>
+                                        <span className="text-zinc-700 py-0.5 pr-3 whitespace-pre-wrap break-all">{l || " "}</span>
+                                      </div>
+                                    ))}
+                                    {/* Match line */}
+                                    <div className="flex items-start gap-0 bg-amber-400/[0.04] border-l-2 border-amber-400/40">
+                                      <span className="text-zinc-500 w-10 text-right shrink-0 px-2 py-0.5 select-none tabular-nums">
+                                        {match.line_number}
+                                      </span>
+                                      <span className="text-zinc-200 py-0.5 pr-3 whitespace-pre-wrap break-all">
+                                        <HighlightedLine
+                                          text={match.line}
+                                          terms={terms}
+                                          phrases={phrases}
+                                          caseSensitive={caseSensitive}
+                                        />
+                                      </span>
+                                    </div>
+                                    {/* Context after */}
+                                    {match.context_after.map((l, i) => (
+                                      <div key={`a${i}`} className="flex items-start gap-0">
+                                        <span className="text-zinc-800 w-10 text-right shrink-0 px-2 py-0.5 select-none tabular-nums">
+                                          {match.line_number + i + 1}
+                                        </span>
+                                        <span className="text-zinc-700 py-0.5 pr-3 whitespace-pre-wrap break-all">{l || " "}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })() : selectedFile ? (
                 <>
                   <div className="flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-1.5 min-w-0">

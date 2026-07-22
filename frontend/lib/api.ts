@@ -136,6 +136,19 @@ export interface KnowledgeFile {
   modified: number;
 }
 
+export interface SearchMatch {
+  line_number: number;
+  line: string;
+  context_before: string[];
+  context_after: string[];
+}
+
+export interface SearchResult {
+  file: string;
+  score: number;
+  matches: SearchMatch[];
+}
+
 export interface KnowledgeTool {
   name: string;
   description: string;
@@ -336,5 +349,7 @@ export const api = {
           ...(tools ? { tools } : {}),
         }),
       }),
+    search: (id: string, q: string) =>
+      apiFetch<SearchResult[]>(`/api/knowledge-agents/${id}/search?${new URLSearchParams({ q })}`),
   },
 };
