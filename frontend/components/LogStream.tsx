@@ -241,10 +241,9 @@ function entryToEvent(entry: LogEntry): LogEvent {
   return { level: entry.level, message: entry.message, metadata: entry.extra };
 }
 
-type LogKind = "info" | "tools" | "error";
+type LogKind = "tools" | "error";
 
 const KIND_LABELS: Record<LogKind, string> = {
-  info: "texto",
   tools: "herramientas",
   error: "errores",
 };
@@ -252,11 +251,9 @@ const KIND_LABELS: Record<LogKind, string> = {
 export function LogStream({
   runId,
   isLive,
-  showInfo = false,
 }: {
   runId: string;
   isLive: boolean;
-  showInfo?: boolean;
 }) {
   const [logs, setLogs] = useState<LogEvent[]>([]);
   const [connected, setConnected] = useState(false);
@@ -265,7 +262,7 @@ export function LogStream({
   const [atBottom, setAtBottom] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
   const [visibleKinds, setVisibleKinds] = useState<Set<LogKind>>(
-    () => new Set(showInfo ? (["info", "tools", "error"] as LogKind[]) : (["tools", "error"] as LogKind[]))
+    () => new Set<LogKind>(["tools", "error"])
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -382,10 +379,9 @@ export function LogStream({
 
   const allItems = processLogs(logs);
   const items = allItems.filter((item) => {
-    if (item.kind === "info") return visibleKinds.has("info");
     if (item.kind === "tool") return visibleKinds.has("tools");
     if (item.kind === "error") return visibleKinds.has("error");
-    return true;
+    return false;
   });
 
   return (
@@ -401,7 +397,7 @@ export function LogStream({
           )}
         </div>
         <div className="flex items-center gap-1">
-          {(["info", "tools", "error"] as LogKind[]).map((kind) => (
+          {(["tools", "error"] as LogKind[]).map((kind) => (
             <button
               key={kind}
               onClick={() => toggleKind(kind)}
