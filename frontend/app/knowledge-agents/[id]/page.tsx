@@ -6,9 +6,28 @@ import Link from "next/link";
 import { api, KnowledgeAgent, KnowledgeFile, Run, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
 import { InfoMessage } from "@/components/LogStream";
 import { fmtTokens, generateUUID } from "@/lib/utils";
-import { Copy, Check, Code } from "lucide-react";
+import { Copy, Check, Code, Pencil } from "lucide-react";
+import hljs from "highlight.js";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
+
+const EXT_LANG: Record<string, string> = {
+  py: "python", js: "javascript", jsx: "javascript",
+  ts: "typescript", tsx: "typescript", json: "json",
+  yaml: "yaml", yml: "yaml", toml: "toml",
+  sh: "bash", bash: "bash", css: "css",
+  html: "html", htm: "html", sql: "sql",
+  rs: "rust", go: "go", java: "java",
+  cpp: "cpp", c: "c", h: "c", xml: "xml",
+};
+
+function fileExt(path: string): string {
+  return path.split(".").pop()?.toLowerCase() ?? "";
+}
+
+function fileHighlightLang(path: string): string | null {
+  return EXT_LANG[fileExt(path)] ?? null;
+}
 
 type View = "chat" | "archivos" | "conversations" | "config";
 
@@ -133,6 +152,8 @@ export default function KnowledgeAgentDetail() {
   const [deletingFile, setDeletingFile] = useState(false);
   const [newFilePath, setNewFilePath] = useState("");
   const [showNewFile, setShowNewFile] = useState(false);
+  const [filePreview, setFilePreview] = useState(true);
+  const [copiedFile, setCopiedFile] = useState(false);
   // Upload state
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ written: string[]; errors: string[] } | null>(null);
@@ -193,6 +214,8 @@ export default function KnowledgeAgentDetail() {
 
   const selectFile = async (path: string) => {
     setSelectedFile(path);
+    setFilePreview(true);
+    setCopiedFile(false);
     setLoadingFile(true);
     try {
       const content = await api.knowledgeAgents.files.get(id, path);
@@ -856,7 +879,28 @@ export default function KnowledgeAgentDetail() {
                 <>
                   <div className="flex items-center justify-between shrink-0">
                     <span className="text-[11px] font-mono text-zinc-500">{selectedFile}</span>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3">
+                      {(fileExt(selectedFile) === "md" || fileHighlightLang(selectedFile)) && (
+                        <button
+                          onClick={() => setFilePreview((v) => !v)}
+                          title={filePreview ? "Ver sin formato" : "Ver formateado"}
+                          className={`flex items-center gap-1 text-xs font-mono transition-colors ${filePreview ? "text-amber-400" : "text-zinc-600 hover:text-zinc-300"}`}
+                        >
+                          <Pencil className="w-3 h-3" />
+                          editar
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(fileContent);
+                          setCopiedFile(true);
+                          setTimeout(() => setCopiedFile(false), 2000);
+                        }}
+                        className="flex items-center gap-1.5 text-xs font-mono text-zinc-600 hover:text-zinc-300 transition-colors"
+                      >
+                        {copiedFile ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        {copiedFile ? "copiado" : "copiar"}
+                      </button>
                       <button
                         onClick={deleteFile}
                         disabled={deletingFile}
@@ -866,7 +910,7 @@ export default function KnowledgeAgentDetail() {
                       </button>
                       <button
                         onClick={saveFile}
-                        disabled={savingFile || !fileDirty}
+                        disabled={savingFile || !fileDirty || filePreview}
                         className="text-xs font-mono text-amber-400 hover:text-amber-300 px-3 py-1 border border-amber-400/20 hover:border-amber-400/40 rounded-md transition-all disabled:opacity-30"
                       >
                         {savingFile ? "guardando···" : "guardar"}
@@ -876,6 +920,16 @@ export default function KnowledgeAgentDetail() {
                   {loadingFile ? (
                     <div className="flex-1 flex items-center justify-center">
                       <span className="text-xs font-mono text-zinc-600 animate-pulse">cargando…</span>
+                    </div>
+                  ) : filePreview && fileExt(selectedFile) === "md" ? (
+                    <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] px-4 py-4 text-zinc-300">
+                      <InfoMessage message={fileContent} />
+                    </div>
+                  ) : filePreview && fileHighlightLang(selectedFile) ? (
+                    <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] bg-zinc-900">
+                      <pre className="px-4 py-4 text-sm leading-relaxed overflow-x-auto">
+                        <code dangerouslySetInnerHTML={{ __html: hljs.highlight(fileContent, { language: fileHighlightLang(selectedFile)! }).value }} />
+                      </pre>
                     </div>
                   ) : (
                     <textarea
