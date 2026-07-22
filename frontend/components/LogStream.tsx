@@ -100,27 +100,28 @@ const mdComponents: Components = {
     }
     return <code className="bg-zinc-800 px-1.5 py-0.5 rounded text-amber-300 text-[0.85em] font-mono">{children}</code>;
   },
-  h1({ children }) { return <h1 className="text-zinc-100 font-semibold text-sm mt-3 mb-1">{children}</h1>; },
-  h2({ children }) { return <h2 className="text-zinc-200 font-semibold text-xs mt-2 mb-0.5">{children}</h2>; },
-  h3({ children }) { return <h3 className="text-zinc-300 font-medium text-xs mt-2 mb-0.5">{children}</h3>; },
-  p({ children }) { return <p className="mb-1.5 text-zinc-300">{children}</p>; },
-  ul({ children }) { return <ul className="list-disc list-inside space-y-0.5 my-1 text-zinc-400">{children}</ul>; },
-  ol({ children }) { return <ol className="list-decimal list-inside space-y-0.5 my-1 text-zinc-400">{children}</ol>; },
-  li({ children }) { return <li>{children}</li>; },
-  strong({ children }) { return <strong className="text-zinc-200 font-semibold">{children}</strong>; },
+  h1({ children }) { return <h1 className="text-xl font-bold text-zinc-100 mt-5 mb-2 leading-tight">{children}</h1>; },
+  h2({ children }) { return <h2 className="text-lg font-semibold text-zinc-200 mt-4 mb-1.5 leading-tight">{children}</h2>; },
+  h3({ children }) { return <h3 className="text-base font-semibold text-zinc-300 mt-3 mb-1 leading-tight">{children}</h3>; },
+  h4({ children }) { return <h4 className="text-sm font-medium text-zinc-300 mt-2 mb-0.5">{children}</h4>; },
+  p({ children }) { return <p className="mb-3 text-zinc-300 leading-relaxed">{children}</p>; },
+  ul({ children }) { return <ul className="list-disc pl-5 my-2 space-y-1 text-zinc-300">{children}</ul>; },
+  ol({ children }) { return <ol className="list-decimal pl-5 my-2 space-y-1 text-zinc-300">{children}</ol>; },
+  li({ children }) { return <li className="leading-relaxed">{children}</li>; },
+  strong({ children }) { return <strong className="text-zinc-100 font-semibold">{children}</strong>; },
   em({ children }) { return <em className="text-zinc-400 italic">{children}</em>; },
   a({ children, href }) {
     return <a href={href} className="text-amber-400 hover:text-amber-300 underline" target="_blank" rel="noopener noreferrer">{children}</a>;
   },
   blockquote({ children }) {
-    return <blockquote className="border-l-2 border-zinc-700 pl-3 text-zinc-500 italic my-1">{children}</blockquote>;
+    return <blockquote className="border-l-2 border-zinc-700 pl-3 text-zinc-500 italic my-2">{children}</blockquote>;
   },
-  hr() { return <hr className="border-zinc-800 my-2" />; },
+  hr() { return <hr className="border-zinc-800 my-4" />; },
 };
 
 export function InfoMessage({ message }: { message: string }) {
   return (
-    <div className="text-xs leading-relaxed">
+    <div className="text-sm leading-relaxed">
       <ReactMarkdown components={mdComponents}>{message}</ReactMarkdown>
     </div>
   );
