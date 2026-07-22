@@ -6,7 +6,7 @@ import Link from "next/link";
 import { api, KnowledgeAgent, KnowledgeFile, Run, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
 import { InfoMessage } from "@/components/LogStream";
 import { fmtTokens, generateUUID } from "@/lib/utils";
-import { Copy, Check, Code, Pencil } from "lucide-react";
+import { Copy, Check, Code } from "lucide-react";
 import hljs from "highlight.js";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
@@ -891,23 +891,36 @@ export default function KnowledgeAgentDetail() {
                         {copiedFile ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                         {copiedFile ? "copiado" : "copiar"}
                       </button>
-                      {(fileExt(selectedFile) === "md" || fileHighlightLang(selectedFile)) && (
+                      {(fileExt(selectedFile) === "md" || fileHighlightLang(selectedFile)) ? (
                         <button
-                          onClick={() => setFilePreview((v) => !v)}
-                          title={filePreview ? "Ver sin formato" : "Ver formateado"}
-                          className={`flex items-center gap-1 text-xs font-mono transition-colors ${!filePreview ? "text-amber-400" : "text-zinc-600 hover:text-zinc-300"}`}
+                          onClick={async () => {
+                            if (filePreview) {
+                              setFilePreview(false);
+                            } else if (fileDirty) {
+                              await saveFile();
+                              setFilePreview(true);
+                            } else {
+                              setFilePreview(true);
+                            }
+                          }}
+                          disabled={savingFile}
+                          className={`text-xs font-mono transition-colors disabled:opacity-30 ${
+                            !filePreview && fileDirty
+                              ? "text-amber-400 hover:text-amber-300 px-3 py-1 border border-amber-400/20 hover:border-amber-400/40 rounded-md"
+                              : "text-zinc-600 hover:text-zinc-300"
+                          }`}
                         >
-                          <Pencil className="w-3 h-3" />
-                          editar
+                          {savingFile ? "guardando···" : filePreview ? "editar" : fileDirty ? "guardar" : "listo"}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={saveFile}
+                          disabled={savingFile || !fileDirty}
+                          className="text-xs font-mono text-amber-400 hover:text-amber-300 px-3 py-1 border border-amber-400/20 hover:border-amber-400/40 rounded-md transition-all disabled:opacity-30"
+                        >
+                          {savingFile ? "guardando···" : "guardar"}
                         </button>
                       )}
-                      <button
-                        onClick={saveFile}
-                        disabled={savingFile || !fileDirty || filePreview}
-                        className="text-xs font-mono text-amber-400 hover:text-amber-300 px-3 py-1 border border-amber-400/20 hover:border-amber-400/40 rounded-md transition-all disabled:opacity-30"
-                      >
-                        {savingFile ? "guardando···" : "guardar"}
-                      </button>
                       <button
                         onClick={deleteFile}
                         disabled={deletingFile}
