@@ -152,6 +152,7 @@ export default function KnowledgeAgentDetail() {
   const [savingDefaultTools, setSavingDefaultTools] = useState(false);
   const [savedDefaultTools, setSavedDefaultTools] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
+  const [rawMessages, setRawMessages] = useState<Set<number>>(new Set());
   const [liveLogs, setLiveLogs] = useState<LiveLogEvent[]>([]);
   const liveEsRef = useRef<EventSource | null>(null);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
@@ -666,7 +667,11 @@ export default function KnowledgeAgentDetail() {
                     </div>
                   ) : (
                     <>
-                      <InfoMessage message={msg.content} />
+                      {rawMessages.has(i) ? (
+                        <pre className="whitespace-pre-wrap text-sm font-mono leading-relaxed text-zinc-300">{msg.content}</pre>
+                      ) : (
+                        <InfoMessage message={msg.content} />
+                      )}
                       {msg.role === "assistant" && (
                         <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/[0.04] text-[11px] font-mono text-zinc-700">
                           {msg.status && <span className={STATUS_TEXT[msg.status]}>{msg.status}</span>}
@@ -676,6 +681,16 @@ export default function KnowledgeAgentDetail() {
                               ver run →
                             </Link>
                           )}
+                          <button
+                            onClick={() => setRawMessages((prev) => {
+                              const next = new Set(prev);
+                              next.has(i) ? next.delete(i) : next.add(i);
+                              return next;
+                            })}
+                            className={`transition-colors ${rawMessages.has(i) ? "text-amber-400" : "hover:text-zinc-500"}`}
+                          >
+                            raw
+                          </button>
                         </div>
                       )}
                     </>
