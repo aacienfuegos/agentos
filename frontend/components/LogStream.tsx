@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
 import { diffLines } from "diff";
 import { Copy, Check, ChevronDown, ChevronRight, ArrowDown } from "lucide-react";
 import { api, LogEntry } from "@/lib/api";
@@ -143,7 +144,7 @@ const mdComponents: Components = {
 export function InfoMessage({ message }: { message: string }) {
   return (
     <div className="text-sm leading-relaxed">
-      <ReactMarkdown components={mdComponents} remarkPlugins={[remarkGfm]}>{message}</ReactMarkdown>
+      <ReactMarkdown components={mdComponents} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{message}</ReactMarkdown>
     </div>
   );
 }
