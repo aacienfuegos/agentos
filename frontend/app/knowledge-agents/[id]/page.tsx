@@ -4,9 +4,30 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, KnowledgeAgent, KnowledgeFile, Run, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
+import { InfoMessage } from "@/components/LogStream";
 import { fmtTokens, generateUUID } from "@/lib/utils";
+import { Copy, Check, Code, Pencil, RotateCcw, Save, Trash2, Eye } from "lucide-react";
+import hljs from "highlight.js";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
+
+const EXT_LANG: Record<string, string> = {
+  py: "python", js: "javascript", jsx: "javascript",
+  ts: "typescript", tsx: "typescript", json: "json",
+  yaml: "yaml", yml: "yaml", toml: "toml",
+  sh: "bash", bash: "bash", css: "css",
+  html: "html", htm: "html", sql: "sql",
+  rs: "rust", go: "go", java: "java",
+  cpp: "cpp", c: "c", h: "c", xml: "xml",
+};
+
+function fileExt(path: string): string {
+  return path.split(".").pop()?.toLowerCase() ?? "";
+}
+
+function fileHighlightLang(path: string): string | null {
+  return EXT_LANG[fileExt(path)] ?? null;
+}
 
 type View = "chat" | "archivos" | "conversations" | "config";
 
@@ -131,6 +152,8 @@ export default function KnowledgeAgentDetail() {
   const [deletingFile, setDeletingFile] = useState(false);
   const [newFilePath, setNewFilePath] = useState("");
   const [showNewFile, setShowNewFile] = useState(false);
+  const [filePreview, setFilePreview] = useState(true);
+  const [copiedFile, setCopiedFile] = useState(false);
   // Upload state
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ written: string[]; errors: string[] } | null>(null);
@@ -151,6 +174,8 @@ export default function KnowledgeAgentDetail() {
   const [savingDefaultTools, setSavingDefaultTools] = useState(false);
   const [savedDefaultTools, setSavedDefaultTools] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
+  const [rawMessages, setRawMessages] = useState<Set<number>>(new Set());
+  const [copiedMsg, setCopiedMsg] = useState<number | null>(null);
   const [liveLogs, setLiveLogs] = useState<LiveLogEvent[]>([]);
   const liveEsRef = useRef<EventSource | null>(null);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
@@ -189,6 +214,8 @@ export default function KnowledgeAgentDetail() {
 
   const selectFile = async (path: string) => {
     setSelectedFile(path);
+    setFilePreview(true);
+    setCopiedFile(false);
     setLoadingFile(true);
     try {
       const content = await api.knowledgeAgents.files.get(id, path);
@@ -476,6 +503,15 @@ export default function KnowledgeAgentDetail() {
     }
   };
 
+  const fileDirty = editingContent !== fileContent;
+
+  useEffect(() => {
+    if (!fileDirty) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [fileDirty]);
+
   if (!agent) return <div className="text-zinc-500 text-sm p-8">Cargando…</div>;
 
   const agentTools = agent.tools ?? ["Read", "Write"];
@@ -487,8 +523,6 @@ export default function KnowledgeAgentDetail() {
     configForm.knowledge_path !== agent.knowledge_path ||
     configForm.tools.length !== agentTools.length ||
     configForm.tools.some((t) => !agentTools.includes(t));
-
-  const fileDirty = editingContent !== fileContent;
 
   return (
     <div className="flex flex-col h-[calc(100dvh-120px)] gap-4">
@@ -665,18 +699,43 @@ export default function KnowledgeAgentDetail() {
                     </div>
                   ) : (
                     <>
-                      <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{msg.content}</pre>
-                      {msg.role === "assistant" && (
-                        <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/[0.04] text-[11px] font-mono text-zinc-700">
-                          {msg.status && <span className={STATUS_TEXT[msg.status]}>{msg.status}</span>}
-                          {msg.tokens != null && msg.tokens > 0 && <span>{fmtTokens(msg.tokens)} tokens</span>}
-                          {msg.run_id && (
-                            <Link href={`/runs/${msg.run_id}`} className="hover:text-zinc-500 transition-colors">
-                              ver run →
-                            </Link>
-                          )}
-                        </div>
+                      {rawMessages.has(i) ? (
+                        <pre className="whitespace-pre-wrap text-sm font-mono leading-relaxed text-zinc-300">{msg.content}</pre>
+                      ) : (
+                        <InfoMessage message={msg.content} />
                       )}
+                      <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/[0.04] text-[11px] font-mono text-zinc-700">
+                        {msg.role === "assistant" && msg.status && <span className={STATUS_TEXT[msg.status]}>{msg.status}</span>}
+                        {msg.role === "assistant" && msg.tokens != null && msg.tokens > 0 && <span>{fmtTokens(msg.tokens)} tokens</span>}
+                        {msg.role === "assistant" && msg.run_id && (
+                          <Link href={`/runs/${msg.run_id}`} className="hover:text-zinc-500 transition-colors">
+                            ver run →
+                          </Link>
+                        )}
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(msg.content).then(() => {
+                              setCopiedMsg(i);
+                              setTimeout(() => setCopiedMsg((c) => c === i ? null : c), 2000);
+                            });
+                          }}
+                          className="ml-auto flex items-center gap-1.5 transition-colors hover:text-zinc-500"
+                        >
+                          {copiedMsg === i ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          {copiedMsg === i ? "copiado" : "copiar"}
+                        </button>
+                        <button
+                          onClick={() => setRawMessages((prev) => {
+                            const next = new Set(prev);
+                            next.has(i) ? next.delete(i) : next.add(i);
+                            return next;
+                          })}
+                          className={`flex items-center gap-1 transition-colors ${rawMessages.has(i) ? "text-amber-400" : "hover:text-zinc-500"}`}
+                        >
+                          <Code className="w-3 h-3" />
+                          raw
+                        </button>
+                      </div>
                     </>
                   )}
                 </div>
@@ -826,27 +885,94 @@ export default function KnowledgeAgentDetail() {
               {selectedFile ? (
                 <>
                   <div className="flex items-center justify-between shrink-0">
-                    <span className="text-[11px] font-mono text-zinc-500">{selectedFile}</span>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[11px] font-mono text-zinc-500 truncate">{selectedFile}</span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(fileContent);
+                          setCopiedFile(true);
+                          setTimeout(() => setCopiedFile(false), 2000);
+                        }}
+                        className="shrink-0 text-zinc-700 hover:text-zinc-400 transition-colors"
+                        title="Copiar contenido"
+                      >
+                        {copiedFile ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {(fileExt(selectedFile) === "md" || fileHighlightLang(selectedFile)) && (
+                        filePreview ? (
+                          <>
+                            <button
+                              onClick={() => setFilePreview(false)}
+                              title="Editar"
+                              className="transition-colors"
+                            >
+                              <Pencil className="w-3.5 h-3.5 text-zinc-600 hover:text-zinc-300" />
+                            </button>
+                            {fileDirty && (
+                              <button
+                                onClick={saveFile}
+                                disabled={savingFile}
+                                title="Guardar"
+                                className="transition-colors disabled:opacity-30"
+                              >
+                                <Save className="w-3.5 h-3.5 text-amber-400 hover:text-amber-300" />
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => setFilePreview(true)}
+                              title="Volver al preview"
+                              className="transition-colors"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-zinc-600 hover:text-zinc-300" />
+                            </button>
+                            {fileDirty && (
+                              <button
+                                onClick={() => { setEditingContent(fileContent); setFilePreview(true); }}
+                                title="Descartar cambios"
+                                className="transition-colors"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5 text-amber-400 hover:text-amber-300" />
+                              </button>
+                            )}
+                            <button
+                              onClick={async () => { await saveFile(); setFilePreview(true); }}
+                              disabled={savingFile}
+                              title="Guardar"
+                              className="transition-colors disabled:opacity-30"
+                            >
+                              <Save className={`w-3.5 h-3.5 ${fileDirty ? "text-amber-400 hover:text-amber-300" : "text-zinc-600 hover:text-zinc-300"}`} />
+                            </button>
+                          </>
+                        )
+                      )}
                       <button
                         onClick={deleteFile}
                         disabled={deletingFile}
-                        className="text-[11px] font-mono text-red-500/50 hover:text-red-400 transition-colors disabled:opacity-30"
+                        title="Eliminar"
+                        className="transition-colors disabled:opacity-30"
                       >
-                        {deletingFile ? "eliminando···" : "eliminar"}
-                      </button>
-                      <button
-                        onClick={saveFile}
-                        disabled={savingFile || !fileDirty}
-                        className="text-xs font-mono text-amber-400 hover:text-amber-300 px-3 py-1 border border-amber-400/20 hover:border-amber-400/40 rounded-md transition-all disabled:opacity-30"
-                      >
-                        {savingFile ? "guardando···" : "guardar"}
+                        <Trash2 className="w-3.5 h-3.5 text-zinc-700 hover:text-red-400" />
                       </button>
                     </div>
                   </div>
                   {loadingFile ? (
                     <div className="flex-1 flex items-center justify-center">
                       <span className="text-xs font-mono text-zinc-600 animate-pulse">cargando…</span>
+                    </div>
+                  ) : filePreview && fileExt(selectedFile) === "md" ? (
+                    <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] px-4 py-4 text-zinc-300">
+                      <InfoMessage message={editingContent} />
+                    </div>
+                  ) : filePreview && fileHighlightLang(selectedFile) ? (
+                    <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] bg-zinc-900">
+                      <pre className="px-4 py-4 text-sm leading-relaxed overflow-x-auto">
+                        <code dangerouslySetInnerHTML={{ __html: hljs.highlight(editingContent, { language: fileHighlightLang(selectedFile)! }).value }} />
+                      </pre>
                     </div>
                   ) : (
                     <textarea
