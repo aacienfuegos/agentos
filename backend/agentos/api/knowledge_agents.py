@@ -327,6 +327,7 @@ def _parse_query(q: str) -> tuple[list[str], list[str], bool]:
 
 
 def _count_substr(text: str, sub: str) -> int:
+    # str.count() skips overlapping occurrences; step by 1 to catch them all
     count = start = 0
     while (idx := text.find(sub, start)) != -1:
         count += 1
@@ -342,6 +343,12 @@ def _extract_snippets(
     context: int = 2,
     max_snippets: int = 5,
 ) -> list[SearchMatch]:
+    """Return the best lines by needle density, re-sorted to document order.
+
+    Density (total needle occurrences on that line) picks the most relevant
+    snippets. Re-sorting by line_number ensures they render top-to-bottom,
+    which is more natural than relevance order for reading.
+    """
     all_needles = terms + phrases
 
     scored: list[tuple[int, float]] = []
@@ -414,7 +421,9 @@ def search_knowledge(agent_id: str, q: str, session: SessionDep) -> list[SearchR
 
     avg_dl = sum(wc for _, _, wc in corpus) / N
 
-    # BM25 constants (Okapi BM25, standard values)
+    # Okapi BM25 (k1=1.5, b=0.75 are the standard defaults).
+    # k1 controls TF saturation — higher means longer docs get proportionally
+    # more credit for repeated terms. b=0.75 applies mild length normalization.
     K1 = 1.5
     B = 0.75
 
@@ -447,7 +456,9 @@ def search_knowledge(agent_id: str, q: str, session: SessionDep) -> list[SearchR
         for needle in all_needles:
             tf = tfs[needle]
             doc_freq = max(df.get(needle, 1), 1)
+            # IDF: rare terms score higher; +1 keeps it positive when df ≈ N
             idf = math.log((N - doc_freq + 0.5) / (doc_freq + 0.5) + 1)
+            # TF with saturation and length normalization
             tf_norm = tf * (K1 + 1) / (tf + K1 * (1 - B + B * word_count / avg_dl))
             score += idf * tf_norm
 

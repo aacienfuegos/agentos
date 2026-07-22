@@ -61,9 +61,12 @@ interface LiveLogEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Search helpers
+// Search helpers (issue #197)
 // ---------------------------------------------------------------------------
 
+// Mirrors _parse_query() in backend/agentos/api/knowledge_agents.py.
+// Must stay in sync: same smart-case rule and same quoted-phrase extraction
+// so client-side highlighting matches exactly what the server found.
 function parseSearchTerms(q: string): { terms: string[]; phrases: string[]; caseSensitive: boolean } {
   const caseSensitive = /[A-Z]/.test(q);
   const phrases: string[] = [];
@@ -80,6 +83,8 @@ function HighlightedLine({
   const needles = [...phrases, ...terms].filter(Boolean).sort((a, b) => b.length - a.length);
   if (needles.length === 0) return <span>{text}</span>;
   const pattern = needles.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  // Capturing group in the RegExp causes split() to include the matched
+  // segments in the result array. Odd indices are matches, even are plain text.
   const parts = text.split(new RegExp(`(${pattern})`, caseSensitive ? "g" : "gi"));
   return (
     <>
@@ -209,6 +214,8 @@ export default function KnowledgeAgentDetail() {
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [contentSearchQuery, setContentSearchQuery] = useState("");
+  const [pendingScrollLine, setPendingScrollLine] = useState<number | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Upload state
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ written: string[]; errors: string[] } | null>(null);
@@ -267,10 +274,14 @@ export default function KnowledgeAgentDetail() {
     }
   }, [id]);
 
-  const selectFile = async (path: string) => {
+  const selectFile = async (path: string, targetLine?: number) => {
+    // When coming from a search result, force raw textarea mode — markdown and
+    // hljs previews are static HTML and can't be scrolled programmatically to
+    // a specific character offset.
     setSelectedFile(path);
-    setFilePreview(true);
+    setFilePreview(targetLine === undefined);
     setCopiedFile(false);
+    if (targetLine !== undefined) setPendingScrollLine(targetLine);
     setLoadingFile(true);
     try {
       const content = await api.knowledgeAgents.files.get(id, path);
@@ -436,6 +447,24 @@ export default function KnowledgeAgentDetail() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  useEffect(() => {
+    if (pendingScrollLine === null || filePreview || loadingFile || !textareaRef.current || !fileContent) return;
+    const el = textareaRef.current;
+    const lines = fileContent.split("\n");
+    const targetIdx = pendingScrollLine - 1;
+    const charsBefore = lines.slice(0, targetIdx).reduce((acc, l) => acc + l.length + 1, 0);
+    // Textarea doesn't expose per-line offsets, so we approximate scroll
+    // position as the fraction of characters before the target line.
+    // This is accurate for monospaced fonts with wrap="off"; with wrapping
+    // it's an approximation that's good enough for most files.
+    const fraction = Math.min(charsBefore / Math.max(fileContent.length, 1), 1);
+    el.scrollTop = Math.max(0, fraction * el.scrollHeight - el.clientHeight / 3);
+    // Select the target line — browser handles the visual highlight
+    el.focus();
+    el.setSelectionRange(charsBefore, charsBefore + (lines[targetIdx]?.length ?? 0));
+    setPendingScrollLine(null);
+  }, [fileContent, pendingScrollLine, filePreview, loadingFile]);
 
   const finalizeRun = async (run_id: string) => {
     liveEsRef.current?.close();
@@ -999,6 +1028,7 @@ export default function KnowledgeAgentDetail() {
 
             {/* Editor / search results panel */}
             <div className="flex-1 min-w-0 flex flex-col gap-2 min-h-0">
+              {/* IIFE lets us declare consts inside a ternary branch */}
               {searchResults !== null ? (() => {
                 const { terms, phrases, caseSensitive } = parseSearchTerms(contentSearchQuery);
                 const totalMatches = searchResults.reduce((s, r) => s + r.matches.length, 0);
@@ -1069,9 +1099,11 @@ export default function KnowledgeAgentDetail() {
                             {result.matches.length > 0 && (
                               <div className="border-t border-white/[0.04]">
                                 {result.matches.map((match, mi) => (
-                                  <div
+                                  <button
                                     key={match.line_number}
-                                    className={`font-mono text-[11px] leading-relaxed ${mi > 0 ? "border-t border-white/[0.04]" : ""}`}
+                                    onClick={() => { selectFile(result.file, match.line_number); clearSearch(); }}
+                                    className={`w-full text-left font-mono text-[11px] leading-relaxed hover:bg-white/[0.02] transition-colors group/match ${mi > 0 ? "border-t border-white/[0.04]" : ""}`}
+                                    title={`Abrir en línea ${match.line_number}`}
                                   >
                                     {/* Context before */}
                                     {match.context_before.map((l, i) => (
@@ -1087,7 +1119,7 @@ export default function KnowledgeAgentDetail() {
                                       <span className="text-zinc-500 w-10 text-right shrink-0 px-2 py-0.5 select-none tabular-nums">
                                         {match.line_number}
                                       </span>
-                                      <span className="text-zinc-200 py-0.5 pr-3 whitespace-pre-wrap break-all">
+                                      <span className="text-zinc-200 py-0.5 pr-3 whitespace-pre-wrap break-all flex-1 min-w-0">
                                         <HighlightedLine
                                           text={match.line}
                                           terms={terms}
@@ -1095,6 +1127,7 @@ export default function KnowledgeAgentDetail() {
                                           caseSensitive={caseSensitive}
                                         />
                                       </span>
+                                      <span className="text-[10px] text-zinc-800 group-hover/match:text-zinc-500 transition-colors shrink-0 px-2 py-0.5 self-center">→</span>
                                     </div>
                                     {/* Context after */}
                                     {match.context_after.map((l, i) => (
@@ -1105,7 +1138,7 @@ export default function KnowledgeAgentDetail() {
                                         <span className="text-zinc-700 py-0.5 pr-3 whitespace-pre-wrap break-all">{l || " "}</span>
                                       </div>
                                     ))}
-                                  </div>
+                                  </button>
                                 ))}
                               </div>
                             )}
@@ -1209,6 +1242,7 @@ export default function KnowledgeAgentDetail() {
                     </div>
                   ) : (
                     <textarea
+                      ref={textareaRef}
                       value={editingContent}
                       onChange={(e) => setEditingContent(e.target.value)}
                       className="flex-1 min-h-0 bg-zinc-900 border border-white/[0.06] rounded-xl px-4 py-4 text-sm text-zinc-300 font-mono leading-relaxed focus:outline-none focus:border-amber-400/20 resize-none"
