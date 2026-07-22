@@ -6,6 +6,7 @@ import Link from "next/link";
 import { api, KnowledgeAgent, KnowledgeFile, Run, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
 import { InfoMessage } from "@/components/LogStream";
 import { fmtTokens, generateUUID } from "@/lib/utils";
+import { Copy, Check } from "lucide-react";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
 
@@ -153,6 +154,7 @@ export default function KnowledgeAgentDetail() {
   const [savedDefaultTools, setSavedDefaultTools] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [rawMessages, setRawMessages] = useState<Set<number>>(new Set());
+  const [copiedMsg, setCopiedMsg] = useState<number | null>(null);
   const [liveLogs, setLiveLogs] = useState<LiveLogEvent[]>([]);
   const liveEsRef = useRef<EventSource | null>(null);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
@@ -681,12 +683,23 @@ export default function KnowledgeAgentDetail() {
                           </Link>
                         )}
                         <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(msg.content).then(() => {
+                              setCopiedMsg(i);
+                              setTimeout(() => setCopiedMsg((c) => c === i ? null : c), 2000);
+                            });
+                          }}
+                          className="ml-auto transition-colors hover:text-zinc-500"
+                        >
+                          {copiedMsg === i ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        </button>
+                        <button
                           onClick={() => setRawMessages((prev) => {
                             const next = new Set(prev);
                             next.has(i) ? next.delete(i) : next.add(i);
                             return next;
                           })}
-                          className={`ml-auto transition-colors ${rawMessages.has(i) ? "text-amber-400" : "hover:text-zinc-500"}`}
+                          className={`transition-colors ${rawMessages.has(i) ? "text-amber-400" : "hover:text-zinc-500"}`}
                         >
                           raw
                         </button>
