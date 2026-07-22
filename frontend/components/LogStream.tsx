@@ -241,6 +241,14 @@ function entryToEvent(entry: LogEntry): LogEvent {
   return { level: entry.level, message: entry.message, metadata: entry.extra };
 }
 
+type LogKind = "info" | "tools" | "error";
+
+const KIND_LABELS: Record<LogKind, string> = {
+  info: "texto",
+  tools: "herramientas",
+  error: "errores",
+};
+
 export function LogStream({
   runId,
   isLive,
@@ -256,11 +264,22 @@ export function LogStream({
   const [thinking, setThinking] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
+  const [visibleKinds, setVisibleKinds] = useState<Set<LogKind>>(
+    () => new Set(showInfo ? (["info", "tools", "error"] as LogKind[]) : (["tools", "error"] as LogKind[]))
+  );
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
   const lastEventMs = useRef(Date.now());
   const backendUrl = "";
+
+  const toggleKind = (kind: LogKind) => {
+    setVisibleKinds((prev) => {
+      const next = new Set(prev);
+      next.has(kind) ? next.delete(kind) : next.add(kind);
+      return next;
+    });
+  };
 
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -306,20 +325,16 @@ export function LogStream({
   // Finished runs: fetch from REST
   useEffect(() => {
     if (isLive) return;
+    const all = new Set(["info", "tool_use", "tool_result", "error"]);
     api.runs.getLogs(runId).then((entries) => {
-      const levels = showInfo
-        ? new Set(["info", "tool_use", "tool_result", "error"])
-        : new Set(["tool_use", "tool_result", "error"]);
-      setLogs(entries.map(entryToEvent).filter((e) => levels.has(e.level)));
+      setLogs(entries.map(entryToEvent).filter((e) => all.has(e.level)));
     });
-  }, [runId, isLive, showInfo]);
+  }, [runId, isLive]);
 
   // Live runs: SSE stream
   useEffect(() => {
     if (!isLive) return;
-    const levels = showInfo
-      ? new Set(["info", "tool_use", "tool_result", "error"])
-      : new Set(["tool_use", "tool_result", "error"]);
+    const all = new Set(["info", "tool_use", "tool_result", "error"]);
 
     const es = new EventSource(`${backendUrl}/api/runs/${runId}/stream`, {
       withCredentials: true,
@@ -329,7 +344,7 @@ export function LogStream({
     es.onmessage = (e: MessageEvent) => {
       try {
         const event: LogEvent = JSON.parse(e.data);
-        if (levels.has(event.level)) setLogs((prev) => [...prev, event]);
+        if (all.has(event.level)) setLogs((prev) => [...prev, event]);
       } catch { /* ignore */ }
     };
 
@@ -342,13 +357,13 @@ export function LogStream({
       setConnected(false);
       es.close();
       api.runs.getLogs(runId).then((entries) => {
-        const filtered = entries.map(entryToEvent).filter((e) => levels.has(e.level));
+        const filtered = entries.map(entryToEvent).filter((e) => all.has(e.level));
         if (filtered.length > 0) setLogs(filtered);
       });
     };
 
     return () => es.close();
-  }, [runId, isLive, showInfo]);
+  }, [runId, isLive]);
 
   const copyLogs = () => {
     const text = logs
@@ -365,13 +380,19 @@ export function LogStream({
     });
   };
 
-  const items = processLogs(logs);
+  const allItems = processLogs(logs);
+  const items = allItems.filter((item) => {
+    if (item.kind === "info") return visibleKinds.has("info");
+    if (item.kind === "tool") return visibleKinds.has("tools");
+    if (item.kind === "error") return visibleKinds.has("error");
+    return true;
+  });
 
   return (
     <div className="flex flex-col h-full rounded-xl border border-white/[0.06] overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.04] shrink-0">
         <div className="flex items-center gap-2 text-xs font-mono text-zinc-600">
-          <span>{logs.length} eventos</span>
+          <span>{items.length} eventos</span>
           {connected && isLive && (
             <span className="flex items-center gap-1 text-green-400">
               <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
@@ -379,15 +400,30 @@ export function LogStream({
             </span>
           )}
         </div>
-        {logs.length > 0 && (
-          <button
-            onClick={copyLogs}
-            className="flex items-center gap-1.5 text-xs font-mono text-zinc-600 hover:text-zinc-300 transition-colors"
-          >
-            {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-            {copied ? "Copiado" : "Copiar"}
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {(["info", "tools", "error"] as LogKind[]).map((kind) => (
+            <button
+              key={kind}
+              onClick={() => toggleKind(kind)}
+              className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors ${
+                visibleKinds.has(kind)
+                  ? "bg-white/[0.06] text-zinc-300"
+                  : "text-zinc-700 hover:text-zinc-500"
+              }`}
+            >
+              {KIND_LABELS[kind]}
+            </button>
+          ))}
+          {logs.length > 0 && (
+            <button
+              onClick={copyLogs}
+              className="flex items-center gap-1.5 text-xs font-mono text-zinc-600 hover:text-zinc-300 transition-colors ml-2 pl-2 border-l border-white/[0.06]"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? "copiado" : "copiar"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div
