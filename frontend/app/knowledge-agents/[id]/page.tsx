@@ -6,7 +6,7 @@ import Link from "next/link";
 import { api, KnowledgeAgent, KnowledgeFile, Run, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
 import { InfoMessage } from "@/components/LogStream";
 import { fmtTokens, generateUUID } from "@/lib/utils";
-import { Copy, Check, Code } from "lucide-react";
+import { Copy, Check, Code, Pencil, Save, Trash2 } from "lucide-react";
 import hljs from "highlight.js";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
@@ -878,19 +878,21 @@ export default function KnowledgeAgentDetail() {
               {selectedFile ? (
                 <>
                   <div className="flex items-center justify-between shrink-0">
-                    <span className="text-[11px] font-mono text-zinc-500">{selectedFile}</span>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[11px] font-mono text-zinc-500 truncate">{selectedFile}</span>
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(fileContent);
                           setCopiedFile(true);
                           setTimeout(() => setCopiedFile(false), 2000);
                         }}
-                        className="flex items-center gap-1.5 text-xs font-mono text-zinc-600 hover:text-zinc-300 transition-colors"
+                        className="shrink-0 text-zinc-700 hover:text-zinc-400 transition-colors"
+                        title="Copiar contenido"
                       >
                         {copiedFile ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                        {copiedFile ? "copiado" : "copiar"}
                       </button>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
                       {(fileExt(selectedFile) === "md" || fileHighlightLang(selectedFile)) ? (
                         <button
                           onClick={async () => {
@@ -904,29 +906,31 @@ export default function KnowledgeAgentDetail() {
                             }
                           }}
                           disabled={savingFile}
-                          className={`text-xs font-mono transition-colors disabled:opacity-30 ${
-                            !filePreview && fileDirty
-                              ? "text-amber-400 hover:text-amber-300 px-3 py-1 border border-amber-400/20 hover:border-amber-400/40 rounded-md"
-                              : "text-zinc-600 hover:text-zinc-300"
-                          }`}
+                          title={filePreview ? "Editar" : fileDirty ? "Guardar" : "Volver al preview"}
+                          className="transition-colors disabled:opacity-30"
                         >
-                          {savingFile ? "guardando···" : filePreview ? "editar" : fileDirty ? "guardar" : "listo"}
+                          {!filePreview && fileDirty
+                            ? <Save className="w-3.5 h-3.5 text-amber-400 hover:text-amber-300" />
+                            : <Pencil className={`w-3.5 h-3.5 ${!filePreview ? "text-amber-400 hover:text-amber-300" : "text-zinc-600 hover:text-zinc-300"}`} />
+                          }
                         </button>
                       ) : (
                         <button
                           onClick={saveFile}
                           disabled={savingFile || !fileDirty}
-                          className="text-xs font-mono text-amber-400 hover:text-amber-300 px-3 py-1 border border-amber-400/20 hover:border-amber-400/40 rounded-md transition-all disabled:opacity-30"
+                          title="Guardar"
+                          className="transition-colors disabled:opacity-30"
                         >
-                          {savingFile ? "guardando···" : "guardar"}
+                          <Save className="w-3.5 h-3.5 text-zinc-600 hover:text-zinc-300" />
                         </button>
                       )}
                       <button
                         onClick={deleteFile}
                         disabled={deletingFile}
-                        className="text-[11px] font-mono text-red-500/50 hover:text-red-400 transition-colors disabled:opacity-30"
+                        title="Eliminar"
+                        className="transition-colors disabled:opacity-30"
                       >
-                        {deletingFile ? "eliminando···" : "eliminar"}
+                        <Trash2 className="w-3.5 h-3.5 text-zinc-700 hover:text-red-400" />
                       </button>
                     </div>
                   </div>
