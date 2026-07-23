@@ -31,6 +31,7 @@ export interface Run {
   schedule_id: string | null;
   status: "pending" | "running" | "success" | "failed" | "cancelled";
   triggered_by: string;
+  run_type: string;
   input_params: Record<string, unknown>;
   output: string | null;
   error: string | null;

@@ -53,7 +53,8 @@ class Run(SQLModel, table=True):
     agent_id: str = Field(foreign_key="agent_definitions.id")
     schedule_id: str | None = None
     status: RunStatus = RunStatus.pending
-    triggered_by: str = "manual"  # "manual" | "schedule" | "api" | "webhook"
+    triggered_by: str = "manual"  # "manual" | "schedule" | "api"
+    run_type: str = "agent"       # "agent" | "chat" | "knowledge" | "execute"
     input_params: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     output: str | None = None
     error: str | None = None

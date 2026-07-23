@@ -30,17 +30,33 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "cancelado",
 };
 
-const TRIGGERED_BY_BADGE: Record<string, string> = {
-  manual:   "bg-zinc-800 text-zinc-400 border-zinc-700/50",
+const ORIGIN_BADGE: Record<string, string> = {
+  manual:   "bg-zinc-800 text-zinc-500 border-zinc-700/50",
   schedule: "bg-purple-500/10 text-purple-400 border-purple-500/20",
   api:      "bg-sky-500/10 text-sky-400 border-sky-500/20",
-  chat:     "bg-amber-400/10 text-amber-400 border-amber-400/20",
 };
 
-function TriggeredByBadge({ value }: { value: string }) {
-  const cls = TRIGGERED_BY_BADGE[value] ?? "bg-zinc-800 text-zinc-500 border-zinc-700/50";
+const RUN_TYPE_BADGE: Record<string, string> = {
+  agent:     "bg-zinc-800 text-zinc-500 border-zinc-700/50",
+  chat:      "bg-amber-400/10 text-amber-400 border-amber-400/20",
+  knowledge: "bg-teal-500/10 text-teal-400 border-teal-500/20",
+  execute:   "bg-sky-500/10 text-sky-400 border-sky-500/20",
+};
+
+function OriginBadge({ value }: { value: string }) {
+  const cls = ORIGIN_BADGE[value] ?? "bg-zinc-800 text-zinc-500 border-zinc-700/50";
   return (
     <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-mono border ${cls}`}>
+      {value}
+    </span>
+  );
+}
+
+function RunTypeBadge({ value }: { value: string }) {
+  if (value === "agent") return null;
+  const cls = RUN_TYPE_BADGE[value] ?? "bg-zinc-800 text-zinc-500 border-zinc-700/50";
+  return (
+    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-mono border ${cls}`}>
       {value}
     </span>
   );
@@ -253,9 +269,7 @@ export default function RunsList() {
                       </td>
                       <td className="px-4 py-3 hidden md:table-cell" />
                       <td className="px-4 py-3 hidden lg:table-cell">
-                        <span className="inline-block px-2 py-0.5 rounded text-[11px] font-mono border bg-teal-500/10 text-teal-400 border-teal-500/20">
-                          knowledge
-                        </span>
+                        <OriginBadge value="manual" />
                       </td>
                     </tr>,
 
@@ -305,7 +319,7 @@ export default function RunsList() {
                                   : "—"}
                               </td>
                               <td className="px-4 py-2 hidden lg:table-cell">
-                                <TriggeredByBadge value={child.triggered_by} />
+                                <OriginBadge value={child.triggered_by} />
                               </td>
                             </tr>
                           );
@@ -348,6 +362,7 @@ export default function RunsList() {
                             ? `api: ${run.input_params?.api_key_name ?? "external"}`
                             : (agentMap[run.agent_id]?.name ?? run.agent_id)}
                         </Link>
+                        <RunTypeBadge value={run.run_type} />
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -366,7 +381,7 @@ export default function RunsList() {
                         : "—"}
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell">
-                      <TriggeredByBadge value={run.triggered_by} />
+                      <OriginBadge value={run.triggered_by} />
                     </td>
                   </tr>,
 
@@ -416,7 +431,7 @@ export default function RunsList() {
                                 : "—"}
                             </td>
                             <td className="px-4 py-2 hidden lg:table-cell">
-                              <TriggeredByBadge value={child.triggered_by} />
+                              <OriginBadge value={child.triggered_by} />
                             </td>
                           </tr>
                         );
