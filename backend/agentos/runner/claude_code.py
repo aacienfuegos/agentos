@@ -32,23 +32,34 @@ class ClaudeCodeRunner:
         persist_session: bool = False,
         resume_session_id: str | None = None,
         cwd: str | None = None,
+        initial_context: str | None = None,
     ) -> RunResult:
         redis = aioredis.from_url(self._redis_url)
         cancel_sub = redis.pubsub()
         await cancel_sub.subscribe(f"run:{run.id}:cancel")
 
+        resume_id: str | None = (
+            resume_session_id
+            if resume_session_id and self._session_exists(resume_session_id, cwd)
+            else None
+        )
+
+        user_message = self._build_user_message(run.input_params, agent.id)
+        if not resume_id and initial_context:
+            user_message = f"Contexto del run anterior:\n\n{initial_context}\n\n---\n\n{user_message}"
+
         cmd = [
             "claude",
-            "-p", self._build_user_message(run.input_params, agent.id),
+            "-p", user_message,
             "--output-format", "stream-json",
             "--verbose",
             "--dangerously-skip-permissions",
         ]
 
-        if resume_session_id:
-            cmd.extend(["--resume", resume_session_id])
+        if resume_id:
+            cmd.extend(["--resume", resume_id])
         else:
-            # Solo inyectar system prompt al iniciar sesión nueva, no al reanudar
+            # New session: inject system prompt and handle persistence
             if agent.system_prompt:
                 cmd.extend(["--system-prompt", agent.system_prompt])
             if not persist_session:
@@ -179,6 +190,14 @@ class ClaudeCodeRunner:
                     extra=metadata,
                 ))
                 session.commit()
+
+    @staticmethod
+    def _session_exists(session_id: str, cwd: str | None = None) -> bool:
+        effective_cwd = cwd or os.getcwd()
+        cwd_hash = effective_cwd.replace("/", "-")
+        home = os.path.expanduser("~")
+        session_path = os.path.join(home, ".claude", "projects", cwd_hash, f"{session_id}.jsonl")
+        return os.path.isfile(session_path)
 
     def _build_user_message(self, input_params: dict, agent_id: str = "") -> str:
         from ..agents.portfolio_updater import build_portfolio_message

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { api, Run, Agent } from "@/lib/api";
 import { fmtTokens } from "@/lib/utils";
+import { ChevronRight, ChevronDown } from "lucide-react";
 
 const STATUS_DOT: Record<string, string> = {
   pending:   "bg-zinc-500",
@@ -29,6 +30,22 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "cancelado",
 };
 
+const TRIGGERED_BY_BADGE: Record<string, string> = {
+  manual:   "bg-zinc-800 text-zinc-400 border-zinc-700/50",
+  schedule: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+  api:      "bg-sky-500/10 text-sky-400 border-sky-500/20",
+  chat:     "bg-amber-400/10 text-amber-400 border-amber-400/20",
+};
+
+function TriggeredByBadge({ value }: { value: string }) {
+  const cls = TRIGGERED_BY_BADGE[value] ?? "bg-zinc-800 text-zinc-500 border-zinc-700/50";
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-mono border ${cls}`}>
+      {value}
+    </span>
+  );
+}
+
 const STATUSES: Run["status"][] = ["running", "success", "failed", "cancelled"];
 const PAGE_SIZE = 20;
 
@@ -45,6 +62,12 @@ function dur(run: Run): string {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${s % 60}s`;
 }
 
+function canExpand(run: Run): boolean {
+  return run.status === "success" &&
+    !run.agent_id.startsWith("knowledge:") &&
+    run.agent_id !== "__execute__";
+}
+
 export default function RunsList() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -53,6 +76,9 @@ export default function RunsList() {
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
+  const [childRuns, setChildRuns] = useState<Record<string, Run[]>>({});
+  const [loadingChildren, setLoadingChildren] = useState<Set<string>>(new Set());
 
   const agentMap = Object.fromEntries(agents.map((a) => [a.id, a]));
 
@@ -62,6 +88,7 @@ export default function RunsList() {
       const result = await api.runs.list({
         limit: PAGE_SIZE,
         offset: newPage * PAGE_SIZE,
+        top_level: true,
         ...(statuses.size > 0 ? { statuses: [...statuses] } : {}),
         ...(agentId ? { agent_id: agentId } : {}),
       });
@@ -89,6 +116,21 @@ export default function RunsList() {
     });
   };
 
+  const toggleExpand = async (runId: string) => {
+    setExpandedRuns((prev) => {
+      const next = new Set(prev);
+      next.has(runId) ? next.delete(runId) : next.add(runId);
+      return next;
+    });
+
+    if (childRuns[runId] !== undefined) return;
+
+    setLoadingChildren((prev) => new Set(prev).add(runId));
+    const children = await api.runs.list({ original_run_id: runId, limit: 100 });
+    setChildRuns((prev) => ({ ...prev, [runId]: children }));
+    setLoadingChildren((prev) => { const s = new Set(prev); s.delete(runId); return s; });
+  };
+
   const goToPage = (newPage: number) => {
     setPage(newPage);
     fetchRuns(newPage, statusFilter, agentFilter);
@@ -100,7 +142,6 @@ export default function RunsList() {
         <h1 className="text-base font-mono font-semibold text-zinc-200 tracking-tight">Ejecuciones</h1>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Agent filter */}
           <select
             value={agentFilter}
             onChange={(e) => setAgentFilter(e.target.value)}
@@ -112,7 +153,6 @@ export default function RunsList() {
             ))}
           </select>
 
-          {/* Status filter — pills multi-select, ninguna = todos */}
           <div className="flex items-center gap-1">
             {STATUSES.map((s) => (
               <button
@@ -156,49 +196,129 @@ export default function RunsList() {
                 </td>
               </tr>
             ) : (
-              runs.map((run, i) => (
-                <tr
-                  key={run.id}
-                  className={`border-b border-white/[0.03] hover:bg-white/[0.03] transition-colors ${
-                    i === runs.length - 1 ? "border-b-0" : ""
-                  }`}
-                >
-                  <td className="px-4 py-3">
-                    <Link
-                      href={`/runs/${run.id}`}
-                      className="text-zinc-300 hover:text-amber-400 transition-colors font-medium"
-                    >
-                      {run.agent_id === "__execute__"
-                        ? `api: ${run.input_params?.api_key_name ?? "external"}`
-                        : (agentMap[run.agent_id]?.name ?? run.agent_id)}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="flex items-center gap-1.5">
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[run.status]}`} />
-                      <span className={`text-xs font-mono ${STATUS_TEXT[run.status]}`}>
-                        {STATUS_LABEL[run.status] ?? run.status}
+              runs.map((run, i) => {
+                const isExpanded = expandedRuns.has(run.id);
+                const isLast = i === runs.length - 1 && !isExpanded;
+                const children = childRuns[run.id];
+
+                return [
+                  <tr
+                    key={run.id}
+                    className={`border-b border-white/[0.03] hover:bg-white/[0.03] transition-colors ${isLast ? "border-b-0" : ""}`}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        {canExpand(run) ? (
+                          <button
+                            onClick={() => toggleExpand(run.id)}
+                            className="shrink-0 text-zinc-600 hover:text-zinc-300 transition-colors"
+                          >
+                            {isExpanded
+                              ? <ChevronDown className="w-3.5 h-3.5" />
+                              : <ChevronRight className="w-3.5 h-3.5" />}
+                          </button>
+                        ) : (
+                          <span className="w-3.5 shrink-0" />
+                        )}
+                        <Link
+                          href={`/runs/${run.id}`}
+                          className="text-zinc-300 hover:text-amber-400 transition-colors font-medium"
+                        >
+                          {run.agent_id === "__execute__"
+                            ? `api: ${run.input_params?.api_key_name ?? "external"}`
+                            : (agentMap[run.agent_id]?.name ?? run.agent_id)}
+                        </Link>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[run.status]}`} />
+                        <span className={`text-xs font-mono ${STATUS_TEXT[run.status]}`}>
+                          {STATUS_LABEL[run.status] ?? run.status}
+                        </span>
                       </span>
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-zinc-600 font-mono text-xs hidden sm:table-cell">
-                    {fmt(run.started_at ?? run.created_at)}
-                  </td>
-                  <td className="px-4 py-3 text-zinc-600 font-mono text-xs">{dur(run)}</td>
-                  <td className="px-4 py-3 text-zinc-600 font-mono text-xs hidden md:table-cell">
-                    {run.tokens_input !== null && run.tokens_output !== null
-                      ? fmtTokens(run.tokens_input + run.tokens_output)
-                      : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-zinc-700 text-xs hidden lg:table-cell">{run.triggered_by}</td>
-                </tr>
-              ))
+                    </td>
+                    <td className="px-4 py-3 text-zinc-600 font-mono text-xs hidden sm:table-cell">
+                      {fmt(run.started_at ?? run.created_at)}
+                    </td>
+                    <td className="px-4 py-3 text-zinc-600 font-mono text-xs">{dur(run)}</td>
+                    <td className="px-4 py-3 text-zinc-600 font-mono text-xs hidden md:table-cell">
+                      {run.tokens_input !== null && run.tokens_output !== null
+                        ? fmtTokens(run.tokens_input + run.tokens_output)
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-3 hidden lg:table-cell">
+                      <TriggeredByBadge value={run.triggered_by} />
+                    </td>
+                  </tr>,
+
+                  // Child rows
+                  isExpanded && (
+                    loadingChildren.has(run.id) ? (
+                      <tr key={`${run.id}-loading`} className="border-b border-white/[0.03]">
+                        <td colSpan={6} className="pl-10 py-2 text-[11px] font-mono text-zinc-700">
+                          cargando···
+                        </td>
+                      </tr>
+                    ) : children?.length === 0 ? (
+                      <tr key={`${run.id}-empty`} className={`border-b border-white/[0.03] ${isLast ? "border-b-0" : ""}`}>
+                        <td colSpan={6} className="pl-10 py-2 text-[11px] font-mono text-zinc-700">
+                          — sin chats —
+                        </td>
+                      </tr>
+                    ) : (
+                      children?.map((child, ci) => {
+                        const isLastChild = ci === (children?.length ?? 0) - 1 && isLast;
+                        const userMsg = String((child.input_params as Record<string, unknown>).user_message ?? "").slice(0, 60);
+                        return (
+                          <tr
+                            key={child.id}
+                            className={`border-b border-white/[0.03] bg-white/[0.01] hover:bg-white/[0.03] transition-colors ${isLastChild ? "border-b-0" : ""}`}
+                          >
+                            <td className="pl-9 pr-4 py-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-zinc-800 font-mono text-xs shrink-0">└</span>
+                                <Link
+                                  href={`/runs/${child.id}`}
+                                  className="text-zinc-500 hover:text-amber-400 transition-colors text-xs font-mono truncate max-w-[200px]"
+                                  title={userMsg}
+                                >
+                                  {userMsg || child.id.slice(0, 8)}
+                                </Link>
+                              </div>
+                            </td>
+                            <td className="px-4 py-2">
+                              <span className="flex items-center gap-1.5">
+                                <span className={`w-1 h-1 rounded-full shrink-0 ${STATUS_DOT[child.status]}`} />
+                                <span className={`text-[11px] font-mono ${STATUS_TEXT[child.status]}`}>
+                                  {STATUS_LABEL[child.status] ?? child.status}
+                                </span>
+                              </span>
+                            </td>
+                            <td className="px-4 py-2 text-zinc-700 font-mono text-[11px] hidden sm:table-cell">
+                              {fmt(child.started_at ?? child.created_at)}
+                            </td>
+                            <td className="px-4 py-2 text-zinc-700 font-mono text-[11px]">{dur(child)}</td>
+                            <td className="px-4 py-2 text-zinc-700 font-mono text-[11px] hidden md:table-cell">
+                              {child.tokens_input !== null && child.tokens_output !== null
+                                ? fmtTokens(child.tokens_input + child.tokens_output)
+                                : "—"}
+                            </td>
+                            <td className="px-4 py-2 hidden lg:table-cell">
+                              <TriggeredByBadge value={child.triggered_by} />
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )
+                  ),
+                ];
+              })
             )}
           </tbody>
         </table>
       </div>
 
-      {/* Pagination */}
       <div className="flex items-center justify-between text-xs font-mono text-zinc-600">
         <span>{page * PAGE_SIZE + 1}–{page * PAGE_SIZE + runs.length}</span>
         <div className="flex items-center gap-2">
