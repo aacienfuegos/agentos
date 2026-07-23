@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import type { Run } from "@/lib/api";
 import { InfoMessage } from "@/components/LogStream";
 import { fmtTokens, generateUUID } from "@/lib/utils";
-import { Copy, Check, Code } from "lucide-react";
+import { Copy, Check, Code, List, Rows3 } from "lucide-react";
 
 const STATUS_TEXT: Record<string, string> = {
   pending: "text-zinc-500",
@@ -68,6 +68,7 @@ export function AgentChatPanel({
 }: AgentChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [convView, setConvView] = useState<"list" | "tabs">("list");
   const [latestSessionId, setLatestSessionId] = useState<string>(initialSessionId);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -244,38 +245,90 @@ export function AgentChatPanel({
   return (
     <div className="flex flex-col h-full gap-3">
       {/* Conversation selector */}
-      <div className="shrink-0 flex items-center gap-2 flex-wrap">
-        {conversations.map((conv) => (
+      {convView === "list" ? (
+        <div className="shrink-0 rounded-xl border border-white/[0.06] overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.04]">
+            <span className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">conversaciones</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={resetToNew}
+                disabled={sending}
+                className="text-[11px] font-mono text-zinc-600 hover:text-zinc-300 transition-colors disabled:opacity-30"
+              >
+                + nueva
+              </button>
+              <button
+                onClick={() => setConvView("tabs")}
+                title="Ver como tabs"
+                className="text-zinc-700 hover:text-zinc-400 transition-colors"
+              >
+                <Rows3 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+          {conversations.length === 0 ? (
+            <div className="px-3 py-2.5 text-[11px] font-mono text-zinc-700">— sin conversaciones previas —</div>
+          ) : (
+            conversations.map((conv) => (
+              <button
+                key={conv.id}
+                onClick={() => onConversationChange(conv.id)}
+                disabled={sending}
+                className={`w-full flex items-center gap-3 px-3 py-2 text-left text-[11px] font-mono border-b border-white/[0.03] last:border-b-0 transition-colors disabled:opacity-50 ${
+                  conversationId === conv.id
+                    ? "bg-amber-400/[0.06] text-amber-400"
+                    : "text-zinc-500 hover:bg-white/[0.02] hover:text-zinc-300"
+                }`}
+              >
+                <span className={`w-1 h-1 rounded-full shrink-0 ${conversationId === conv.id ? "bg-amber-400" : "bg-zinc-700"}`} />
+                <span className="flex-1 truncate">{conv.firstMessage || conv.id.slice(0, 8)}</span>
+                <span className="text-zinc-700 shrink-0">{conv.turnCount}t</span>
+                <span className="text-zinc-700 shrink-0">{relTime(conv.lastAt)}</span>
+              </button>
+            ))
+          )}
+        </div>
+      ) : (
+        <div className="shrink-0 flex items-center gap-2 flex-wrap">
+          {conversations.map((conv) => (
+            <button
+              key={conv.id}
+              onClick={() => onConversationChange(conv.id)}
+              disabled={sending}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono transition-colors disabled:opacity-50 ${
+                conversationId === conv.id
+                  ? "bg-amber-400/10 border border-amber-400/20 text-amber-400"
+                  : "bg-white/[0.03] border border-white/[0.06] text-zinc-500 hover:text-zinc-300"
+              }`}
+              title={conv.firstMessage}
+            >
+              <span className="max-w-[120px] truncate">{conv.firstMessage || conv.id.slice(0, 8)}</span>
+              <span className="text-zinc-700">·</span>
+              <span>{conv.turnCount}t</span>
+              <span className="text-zinc-700">·</span>
+              <span>{relTime(conv.lastAt)}</span>
+            </button>
+          ))}
           <button
-            key={conv.id}
-            onClick={() => onConversationChange(conv.id)}
+            onClick={resetToNew}
             disabled={sending}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono transition-colors disabled:opacity-50 ${
-              conversationId === conv.id
-                ? "bg-amber-400/10 border border-amber-400/20 text-amber-400"
-                : "bg-white/[0.03] border border-white/[0.06] text-zinc-500 hover:text-zinc-300"
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-mono transition-colors disabled:opacity-30 ${
+              conversationId === null
+                ? "bg-white/[0.06] border border-white/[0.1] text-zinc-300"
+                : "text-zinc-600 hover:text-zinc-400 border border-transparent"
             }`}
-            title={conv.firstMessage}
           >
-            <span className="max-w-[120px] truncate">{conv.firstMessage || conv.id.slice(0, 8)}</span>
-            <span className="text-zinc-700">·</span>
-            <span>{conv.turnCount}t</span>
-            <span className="text-zinc-700">·</span>
-            <span>{relTime(conv.lastAt)}</span>
+            + nueva
           </button>
-        ))}
-        <button
-          onClick={resetToNew}
-          disabled={sending}
-          className={`px-2.5 py-1 rounded-lg text-[11px] font-mono transition-colors disabled:opacity-30 ${
-            conversationId === null
-              ? "bg-white/[0.06] border border-white/[0.1] text-zinc-300"
-              : "text-zinc-600 hover:text-zinc-400 border border-transparent"
-          }`}
-        >
-          + nueva
-        </button>
-      </div>
+          <button
+            onClick={() => setConvView("list")}
+            title="Ver como lista"
+            className="text-zinc-700 hover:text-zinc-400 transition-colors ml-1"
+          >
+            <List className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] p-4 space-y-4">
