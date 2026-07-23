@@ -32,21 +32,32 @@ class ClaudeCodeRunner:
         persist_session: bool = False,
         resume_session_id: str | None = None,
         cwd: str | None = None,
+        initial_context: str | None = None,
     ) -> RunResult:
         redis = aioredis.from_url(self._redis_url)
         cancel_sub = redis.pubsub()
         await cancel_sub.subscribe(f"run:{run.id}:cancel")
 
+        resume_id: str | None = (
+            resume_session_id
+            if resume_session_id and self._session_exists(resume_session_id, cwd)
+            else None
+        )
+
+        user_message = self._build_user_message(run.input_params, agent.id)
+        if not resume_id and initial_context:
+            user_message = f"Contexto del run anterior:\n\n{initial_context}\n\n---\n\n{user_message}"
+
         cmd = [
             "claude",
-            "-p", self._build_user_message(run.input_params, agent.id),
+            "-p", user_message,
             "--output-format", "stream-json",
             "--verbose",
             "--dangerously-skip-permissions",
         ]
 
-        if resume_session_id and self._session_exists(resume_session_id, cwd):
-            cmd.extend(["--resume", resume_session_id])
+        if resume_id:
+            cmd.extend(["--resume", resume_id])
         else:
             # New session: inject system prompt and handle persistence
             if agent.system_prompt:

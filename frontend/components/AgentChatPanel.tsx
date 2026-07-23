@@ -125,6 +125,7 @@ export function AgentChatPanel({
     setSending(true);
     setLiveLogs([]);
 
+    const isFirstMessage = !conversationId;
     let convId = conversationId;
     if (!convId) {
       convId = generateUUID();
@@ -139,6 +140,7 @@ export function AgentChatPanel({
         user_message: userMsg,
         resume_session_id: latestSessionId,
         conversation_id: convId,
+        ...(isFirstMessage && initialOutput ? { initial_context: initialOutput } : {}),
       });
       const run_id = run.id;
 

@@ -82,6 +82,7 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
         session.commit()
 
         resume_session_id: str | None = run.input_params.get("resume_session_id")
+        initial_context: str | None = run.input_params.get("initial_context")
 
         # Inject knowledge agent context if configured and not resuming a session
         ka_cwd: str | None = None
@@ -109,7 +110,7 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
 
     try:
         result = await asyncio.wait_for(
-            runner.run(run, agent, persist_session=True, resume_session_id=resume_session_id, cwd=ka_cwd),
+            runner.run(run, agent, persist_session=True, resume_session_id=resume_session_id, cwd=ka_cwd, initial_context=initial_context),
             timeout=agent.timeout_seconds,
         )
 
