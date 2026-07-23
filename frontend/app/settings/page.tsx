@@ -2,6 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { api, ApiKey, ApiKeyCreated } from "@/lib/api";
+import { usePreferences, type SyntaxTheme, type TextSize } from "@/lib/usePreferences";
+
+const SYNTAX_THEMES: { value: SyntaxTheme; label: string }[] = [
+  { value: "atom-one-dark", label: "Atom One Dark" },
+  { value: "github-dark", label: "GitHub Dark" },
+  { value: "tokyo-night", label: "Tokyo Night" },
+];
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
 
@@ -11,6 +18,7 @@ function fmt(dt: string | null): string {
 }
 
 export default function SettingsPage() {
+  const { preferences, setPreferences } = usePreferences();
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
@@ -103,6 +111,84 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+
+      {/* Preferencias de visualización */}
+      <section className="space-y-3">
+        <h2 className="text-xs font-mono uppercase tracking-widest text-zinc-600">Preferencias</h2>
+        <div className="rounded-xl border border-white/[0.06] divide-y divide-white/[0.04]">
+          <div className="flex items-center justify-between px-4 py-3 gap-4">
+            <div>
+              <p className="text-xs font-mono text-zinc-300">Tema de syntax highlighting</p>
+              <p className="text-[11px] text-zinc-700 mt-0.5">Aplica a los bloques de código en logs y chat.</p>
+            </div>
+            <select
+              value={preferences.syntaxTheme}
+              onChange={(e) => setPreferences({ syntaxTheme: e.target.value as SyntaxTheme })}
+              className="bg-zinc-900 border border-white/[0.06] rounded-md px-3 py-1.5 text-xs font-mono text-zinc-200 focus:outline-none focus:border-amber-400/30 transition-colors"
+            >
+              {SYNTAX_THEMES.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center justify-between px-4 py-3 gap-4">
+            <div>
+              <p className="text-xs font-mono text-zinc-300">Tamaño de texto</p>
+              <p className="text-[11px] text-zinc-700 mt-0.5">Compacta el texto en logs y chat.</p>
+            </div>
+            <div className="flex items-center gap-1">
+              {(["normal", "compact"] as TextSize[]).map((size) => (
+                <button
+                  key={size}
+                  onClick={() => setPreferences({ textSize: size })}
+                  className={`px-2.5 py-1 rounded text-[11px] font-mono transition-colors ${
+                    preferences.textSize === size
+                      ? "bg-white/[0.06] text-zinc-200"
+                      : "text-zinc-700 hover:text-zinc-500"
+                  }`}
+                >
+                  {size === "normal" ? "normal" : "compacto"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between px-4 py-3 gap-4">
+            <div>
+              <p className="text-xs font-mono text-zinc-300">Markdown en raw por defecto</p>
+              <p className="text-[11px] text-zinc-700 mt-0.5">Los mensajes se muestran sin renderizar (se puede alternar por mensaje).</p>
+            </div>
+            <button
+              onClick={() => setPreferences({ markdownRawDefault: !preferences.markdownRawDefault })}
+              className={`px-2.5 py-1 rounded text-[11px] font-mono transition-colors ${
+                preferences.markdownRawDefault
+                  ? "bg-amber-400/10 text-amber-400"
+                  : "bg-white/[0.04] text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {preferences.markdownRawDefault ? "activado" : "desactivado"}
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between px-4 py-3 gap-4">
+            <div>
+              <p className="text-xs font-mono text-zinc-300">Auto-scroll en logs</p>
+              <p className="text-[11px] text-zinc-700 mt-0.5">Sigue automáticamente los eventos nuevos de una ejecución en vivo.</p>
+            </div>
+            <button
+              onClick={() => setPreferences({ autoScroll: !preferences.autoScroll })}
+              className={`px-2.5 py-1 rounded text-[11px] font-mono transition-colors ${
+                preferences.autoScroll
+                  ? "bg-amber-400/10 text-amber-400"
+                  : "bg-white/[0.04] text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {preferences.autoScroll ? "activado" : "desactivado"}
+            </button>
+          </div>
+        </div>
+      </section>
 
       {/* Formulario de creación */}
       <section className="space-y-3">
