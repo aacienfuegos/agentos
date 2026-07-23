@@ -176,15 +176,21 @@ en `log_entries`. Tokens y coste se extraen del evento `result` final.
 
 ## Estado actual del desarrollo
 
-**Última sesión activa:** 2026-07-23 — roadmap ampliado con dos fases nuevas (`phase:usage-limits` #214–217, `phase:projects` #218–220) tras revisar `NOTES.md` (borrado una vez capturado en #220). En paralelo, otro agente trabaja en local sobre `feat/run-type-separation-213` (separar `run_type` de `triggered_by`), sin mergear todavía.
+**Última sesión activa:** 2026-07-24 — auditoría de discrepancias entre issues de GitHub y el estado real de `main`/`develop`.
 
-### PRs abiertas
+> **Gotcha detectado:** un PR con `Closes #N` solo auto-cierra el issue si se mergea en la *default branch* del repo (`main`). Como el flujo real es `feat → develop → main` en dos PRs separados, el cierre automático nunca se dispara al mergear a `develop`, y si la promoción `develop → main` se hace con un merge commit sin closing keyword, el issue se queda abierto aunque el código ya esté en producción. Revisar periódicamente con `git log main` vs `gh issue list --state open`.
 
-`#213` `feat(runs): separar run_type de triggered_by` → `develop` (en desarrollo activo, sin terminar).
+### Batch pendiente de promoción `develop → main`
+
+`develop` tiene mergeado y sin promocionar a `main`: chat sobre runs (#209), agrupación de runs de knowledge chat (#210), orden de hijos por antigüedad (#211), separación `run_type`/`triggered_by` (#213), refactor KnowledgeBase/KnowledgeAgent (#221/#222). Existe PR abierta `#224` (`develop → main`) que promociona el refactor de KnowledgeBase; el resto del batch (#209–213) no tiene aún PR de promoción abierta.
 
 ### Issues ya implementados
 
-Cerrados y en producción (main): phase:core, phase:scheduler, phase:knowledge-1, phase:external-api (#117–#120), harness CRUD + AI generation (#190), agentes CRUD + tool selector (#191/#192), polish de LogStream (#160–165, #66, #193), explorador de ficheros del Knowledge Agent — colapso y botones (#195, #198), BM25 full-text search (#199), migraciones Alembic + entrypoint automático (#204, #205, #207), chat sobre runs de agentes (#206, #209), agrupación de runs de knowledge chat (#210), orden de hijos por antigüedad (#211). phase:polish parcialmente: #20 (Caddy + Tailscale) sigue abierto. Ver historial completo en GitHub.
+Cerrados y en producción (main): phase:core, phase:scheduler, phase:knowledge-1, phase:external-api (#117–#120), harness CRUD + AI generation (#190), agentes CRUD + tool selector (#191/#192), polish de LogStream + quitar coste (#66, #160–165, #193), colapso de carpetas en explorador Knowledge Agent (#195/#196), botones expandir/colapsar todo (#198), BM25 full-text search (#199), migraciones Alembic + entrypoint automático (#204, #205, #207). #191, #195, #66 y #160–165 se cerraron manualmente el 2026-07-24 tras confirmar que el código ya estaba en `main` (ver gotcha arriba). phase:polish parcialmente: #20 (Caddy + Tailscale) sigue abierto.
+
+En `develop`, pendiente de promoción a `main` (ver batch arriba): chat sobre runs (#206/#209), agrupación de runs de knowledge chat (#210), orden de hijos por antigüedad (#211), run_type/triggered_by (#213), refactor KnowledgeBase (#221/#222, PR #224 abierta).
+
+Verificado como **no implementado todavía** pese a mencionarse junto a features similares: #166 (botón cancelar run) y #197 (buscador/filtro en explorador de ficheros) — backlog válido, no cerrar.
 
 ### Fases pendientes del roadmap
 
