@@ -176,9 +176,11 @@ en `log_entries`. Tokens y coste se extraen del evento `result` final.
 
 ## Estado actual del desarrollo
 
-**Última sesión activa:** 2026-07-24 — auditoría de discrepancias entre issues de GitHub y el estado real de `main`/`develop`.
+**Última sesión activa:** 2026-07-24 — noche: cierre de #197/#223/#194/#203 (mergeados a `develop`, CI verde) y diseño + implementación de #219 (agentes de infraestructura), dejado en rama `feat/infra-agents-issue-219` sin PR para revisión.
 
 > **Gotcha detectado:** un PR con `Closes #N` solo auto-cierra el issue si se mergea en la *default branch* del repo (`main`). Como el flujo real es `feat → develop → main` en dos PRs separados, el cierre automático nunca se dispara al mergear a `develop`, y si la promoción `develop → main` se hace con un merge commit sin closing keyword, el issue se queda abierto aunque el código ya esté en producción. Revisar periódicamente con `git log main` vs `gh issue list --state open`.
+
+> **Gotcha detectado (UID de contenedor vs volumen persistente):** el `Dockerfile` de `backend` define `ARG UID=1001` como default propio, distinto del default `UID:-1000` de `docker-compose.dev.yml`. Si una imagen se construye sin que el build-arg de compose llegue a aplicarse (p.ej. un `docker build`/`compose build` suelto en un shell donde `UID` no estaba exportado), el usuario `worker` queda con UID 1001 y los ficheros que crea en el volumen `backend_data` (incluido `/data/agentos.db`) quedan con ese owner. Un rebuild posterior con UID 1000 no puede escribir en esos ficheros (`attempt to write a readonly database`), y además puede desincronizar `alembic_version` si `create_db_and_tables()` llegó a crear una tabla antes de que la migración correspondiente se aplicara — el síntoma es `table X already exists` en `alembic upgrade head` al arrancar. Fix no destructivo: `docker compose run --rm --user root --entrypoint sh backend -c "chown -R worker:worker /data"` para igualar ownership, y si la tabla física ya coincide con el esquema de una migración pendiente, `alembic stamp head` en vez de recrearla.
 
 ### Batch pendiente de promoción `develop → main`
 
@@ -225,3 +227,12 @@ Verificado como **no implementado todavía** pese a mencionarse junto a features
 - El evento `done` de Redis se publica dentro de `ClaudeCodeRunner._handle_event`, antes de que el worker escriba `status=success` en la DB. El frontend espera a que el run alcance estado terminal (polling 300 ms) antes de mostrar la respuesta.
 - `EventSource` requiere `withCredentials: true` para enviar la cookie `agentos_token` en requests cross-origin (frontend :3000 → backend :8000). La cookie tiene `SameSite=Strict`.
 - `LogStream.tsx` acepta `showInfo?: boolean` para incluir opcionalmente los eventos `info` (texto intermedio del agente). El chat de knowledge agents los muestra; la página `/runs/[id]` no.
+
+### Notas de arquitectura (#219 — agentes de infraestructura)
+
+- Diseño conceptual completo en `docs/infra-agents-design.md`. Implementación de la primera fase en la rama `feat/infra-agents-issue-219` (pusheada, **sin PR** — pendiente de revisión manual antes de decidir si se promociona).
+- `InfraTarget` (modelo + CRUD en `backend/agentos/api/infra_targets.py` + migración `2a005acba89e`) representa un host gestionable por SSH. Solo metadata (host, usuario, puerto, notas) — sin credenciales en la tabla, el agente usa la keypair montada en el contenedor.
+- Agente builtin `infra-architect` (`backend/agentos/agents/builtin.py`, lista `INFRA_AGENTS`) es puramente advisory: tools `["Bash", "Read"]`, sin `Write`, nunca aplica cambios — solo diagnostica y propone. Se registra únicamente si `INFRA_AGENTS_ENABLED=true` (default `false`).
+- La barrera de seguridad real no es el system prompt del agente, es un `command=` forzado en el `authorized_keys` del host SSH de destino (`scripts/infra-dev/allowed-commands.sh`), que hace allowlist estricto de comandos de solo lectura (`uptime`, `df -h`, `docker ps`, etc.) y rechaza cualquier otra cosa a nivel de servidor SSH, no de confianza en el criterio del modelo.
+- Target de dev: servicio `infra-dev-target` en `docker-compose.dev.yml` (`linuxserver/openssh-server`), con una keypair dedicada `agentos_infra` (generada por `scripts/infra-dev/gen-infra-keypair.sh`, nunca la del usuario) montada read-only en `backend`/`worker`. Verificado end-to-end: SSH real desde ambos contenedores + run real de `infra-architect` vía `POST /api/runs` con informe estructurado como salida.
+- Explícitamente fuera de esta fase: cualquier conexión a infraestructura real (`~/docu/homelab`) o capacidad de despliegue/escritura — eso requiere una decisión explícita posterior (ver roadmap `phase:projects` / `phase:multi-tenant`) y un agente "deployer" separado con aprobación humana.
