@@ -57,8 +57,7 @@ def list_runs(
             func.json_extract(Run.input_params, "$.conversation_id") == conversation_id
         )
     if top_level:
-        query = query.where(Run.triggered_by != "chat")
-        query = query.where(~Run.agent_id.like("knowledge:%"))
+        query = query.where(Run.run_type.notin_(["chat", "knowledge"]))
     return session.exec(query).all()
 
 
@@ -103,8 +102,9 @@ async def create_run(run: RunCreate, session: SessionDep) -> Run:
     if not agent:
         raise HTTPException(404, "Agent not found")
 
-    triggered_by = "chat" if "conversation_id" in run.input_params else "manual"
-    db_run = Run(agent_id=run.agent_id, input_params=run.input_params, triggered_by=triggered_by)
+    has_conversation = "conversation_id" in run.input_params
+    run_type = "chat" if has_conversation else "agent"
+    db_run = Run(agent_id=run.agent_id, input_params=run.input_params, triggered_by="manual", run_type=run_type)
     session.add(db_run)
     session.commit()
     session.refresh(db_run)

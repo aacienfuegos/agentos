@@ -30,17 +30,32 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "cancelado",
 };
 
-const TRIGGERED_BY_BADGE: Record<string, string> = {
-  manual:   "bg-zinc-800 text-zinc-400 border-zinc-700/50",
+const ORIGIN_BADGE: Record<string, string> = {
+  manual:   "bg-zinc-800 text-zinc-500 border-zinc-700/50",
   schedule: "bg-purple-500/10 text-purple-400 border-purple-500/20",
   api:      "bg-sky-500/10 text-sky-400 border-sky-500/20",
-  chat:     "bg-amber-400/10 text-amber-400 border-amber-400/20",
 };
 
-function TriggeredByBadge({ value }: { value: string }) {
-  const cls = TRIGGERED_BY_BADGE[value] ?? "bg-zinc-800 text-zinc-500 border-zinc-700/50";
+const RUN_TYPE_BADGE: Record<string, string> = {
+  agent:     "bg-zinc-800 text-zinc-500 border-zinc-700/50",
+  chat:      "bg-amber-400/10 text-amber-400 border-amber-400/20",
+  knowledge: "bg-teal-500/10 text-teal-400 border-teal-500/20",
+  execute:   "bg-sky-500/10 text-sky-400 border-sky-500/20",
+};
+
+function OriginBadge({ value }: { value: string }) {
+  const cls = ORIGIN_BADGE[value] ?? "bg-zinc-800 text-zinc-500 border-zinc-700/50";
   return (
     <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-mono border ${cls}`}>
+      {value}
+    </span>
+  );
+}
+
+function RunTypeBadge({ value }: { value: string }) {
+  const cls = RUN_TYPE_BADGE[value] ?? "bg-zinc-800 text-zinc-500 border-zinc-700/50";
+  return (
+    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-mono border ${cls}`}>
       {value}
     </span>
   );
@@ -189,6 +204,7 @@ export default function RunsList() {
           <thead>
             <tr className="border-b border-white/[0.04]">
               <th className="text-left px-4 py-3 text-[11px] font-mono uppercase tracking-widest text-zinc-600">Agente</th>
+              <th className="text-left px-4 py-3 text-[11px] font-mono uppercase tracking-widest text-zinc-600">Tipo</th>
               <th className="text-left px-4 py-3 text-[11px] font-mono uppercase tracking-widest text-zinc-600">Estado</th>
               <th className="text-left px-4 py-3 text-[11px] font-mono uppercase tracking-widest text-zinc-600 hidden sm:table-cell">Inicio</th>
               <th className="text-left px-4 py-3 text-[11px] font-mono uppercase tracking-widest text-zinc-600">Dur.</th>
@@ -199,13 +215,13 @@ export default function RunsList() {
           <tbody>
             {loading && items.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-xs font-mono text-zinc-700">
+                <td colSpan={7} className="px-4 py-10 text-center text-xs font-mono text-zinc-700">
                   cargando…
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-xs font-mono text-zinc-700">
+                <td colSpan={7} className="px-4 py-10 text-center text-xs font-mono text-zinc-700">
                   — sin ejecuciones —
                 </td>
               </tr>
@@ -243,6 +259,9 @@ export default function RunsList() {
                         </div>
                       </td>
                       <td className="px-4 py-3">
+                        <RunTypeBadge value="knowledge" />
+                      </td>
+                      <td className="px-4 py-3">
                         <span className="text-xs font-mono text-zinc-600">{conv.turn_count} turnos</span>
                       </td>
                       <td className="px-4 py-3 text-zinc-600 font-mono text-xs hidden sm:table-cell">
@@ -253,20 +272,18 @@ export default function RunsList() {
                       </td>
                       <td className="px-4 py-3 hidden md:table-cell" />
                       <td className="px-4 py-3 hidden lg:table-cell">
-                        <span className="inline-block px-2 py-0.5 rounded text-[11px] font-mono border bg-teal-500/10 text-teal-400 border-teal-500/20">
-                          knowledge
-                        </span>
+                        <OriginBadge value="manual" />
                       </td>
                     </tr>,
 
                     isExpanded && (
                       loadingChildren.has(key) ? (
                         <tr key={`${key}-loading`} className="border-b border-white/[0.03]">
-                          <td colSpan={6} className="pl-10 py-2 text-[11px] font-mono text-zinc-700">cargando···</td>
+                          <td colSpan={7} className="pl-10 py-2 text-[11px] font-mono text-zinc-700">cargando···</td>
                         </tr>
                       ) : children?.length === 0 ? (
                         <tr key={`${key}-empty`} className={`border-b border-white/[0.03] ${isLast ? "border-b-0" : ""}`}>
-                          <td colSpan={6} className="pl-10 py-2 text-[11px] font-mono text-zinc-700">— sin runs —</td>
+                          <td colSpan={7} className="pl-10 py-2 text-[11px] font-mono text-zinc-700">— sin runs —</td>
                         </tr>
                       ) : (
                         children?.map((child, ci) => {
@@ -289,6 +306,7 @@ export default function RunsList() {
                                   </Link>
                                 </div>
                               </td>
+                              <td className="px-4 py-2" />
                               <td className="px-4 py-2">
                                 <span className="flex items-center gap-1.5">
                                   <span className={`w-1 h-1 rounded-full shrink-0 ${STATUS_DOT[child.status]}`} />
@@ -305,7 +323,7 @@ export default function RunsList() {
                                   : "—"}
                               </td>
                               <td className="px-4 py-2 hidden lg:table-cell">
-                                <TriggeredByBadge value={child.triggered_by} />
+                                <OriginBadge value={child.triggered_by} />
                               </td>
                             </tr>
                           );
@@ -351,6 +369,9 @@ export default function RunsList() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
+                      <RunTypeBadge value={run.run_type} />
+                    </td>
+                    <td className="px-4 py-3">
                       <span className="flex items-center gap-1.5">
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[run.status]}`} />
                         <span className={`text-xs font-mono ${STATUS_TEXT[run.status]}`}>
@@ -366,18 +387,18 @@ export default function RunsList() {
                         : "—"}
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell">
-                      <TriggeredByBadge value={run.triggered_by} />
+                      <OriginBadge value={run.triggered_by} />
                     </td>
                   </tr>,
 
                   isExpanded && (
                     loadingChildren.has(run.id) ? (
                       <tr key={`${run.id}-loading`} className="border-b border-white/[0.03]">
-                        <td colSpan={6} className="pl-10 py-2 text-[11px] font-mono text-zinc-700">cargando···</td>
+                        <td colSpan={7} className="pl-10 py-2 text-[11px] font-mono text-zinc-700">cargando···</td>
                       </tr>
                     ) : children?.length === 0 ? (
                       <tr key={`${run.id}-empty`} className={`border-b border-white/[0.03] ${isLast ? "border-b-0" : ""}`}>
-                        <td colSpan={6} className="pl-10 py-2 text-[11px] font-mono text-zinc-700">— sin chats —</td>
+                        <td colSpan={7} className="pl-10 py-2 text-[11px] font-mono text-zinc-700">— sin chats —</td>
                       </tr>
                     ) : (
                       children?.map((child, ci) => {
@@ -400,6 +421,7 @@ export default function RunsList() {
                                 </Link>
                               </div>
                             </td>
+                            <td className="px-4 py-2" />
                             <td className="px-4 py-2">
                               <span className="flex items-center gap-1.5">
                                 <span className={`w-1 h-1 rounded-full shrink-0 ${STATUS_DOT[child.status]}`} />
@@ -416,7 +438,7 @@ export default function RunsList() {
                                 : "—"}
                             </td>
                             <td className="px-4 py-2 hidden lg:table-cell">
-                              <TriggeredByBadge value={child.triggered_by} />
+                              <OriginBadge value={child.triggered_by} />
                             </td>
                           </tr>
                         );

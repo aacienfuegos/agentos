@@ -507,7 +507,6 @@ async def query_knowledge_agent(
     if data.tools is not None:
         input_params["tools"] = data.tools
 
-    triggered_by = "manual"
     if data.conversation_id:
         first_run = session.exec(
             select(Run)
@@ -518,13 +517,13 @@ async def query_knowledge_agent(
             .limit(1)
         ).first()
         if first_run:
-            triggered_by = "chat"
             input_params["original_run_id"] = first_run.id
 
     run = Run(
         agent_id=f"knowledge:{agent_id}",
         input_params=input_params,
-        triggered_by=triggered_by,
+        triggered_by="manual",
+        run_type="knowledge",
         status=RunStatus.pending,
     )
     session.add(run)
