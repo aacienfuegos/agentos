@@ -134,7 +134,7 @@ export default function RunsList() {
     });
     if (childRuns[key] !== undefined) return;
     setLoadingChildren((prev) => new Set(prev).add(key));
-    const children = await fetchFn();
+    const children = (await fetchFn()).sort((a, b) => a.created_at.localeCompare(b.created_at));
     setChildRuns((prev) => ({ ...prev, [key]: children }));
     setLoadingChildren((prev) => { const s = new Set(prev); s.delete(key); return s; });
   };
