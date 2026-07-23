@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import type { Run } from "@/lib/api";
 import { InfoMessage } from "@/components/LogStream";
 import { fmtTokens, generateUUID } from "@/lib/utils";
+import { usePreferences } from "@/lib/usePreferences";
 import { Copy, Check, Code, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 const STATUS_TEXT: Record<string, string> = {
@@ -73,8 +74,9 @@ export function AgentChatPanel({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [liveLogs, setLiveLogs] = useState<LiveLogEvent[]>([]);
-  const [rawMessages, setRawMessages] = useState<Set<number>>(new Set());
+  const [toggledRaw, setToggledRaw] = useState<Set<number>>(new Set());
   const [copiedMsg, setCopiedMsg] = useState<number | null>(null);
+  const { preferences } = usePreferences();
   const liveEsRef = useRef<EventSource | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -364,11 +366,10 @@ export function AgentChatPanel({
                   </div>
                 ) : (
                   <>
-                    {rawMessages.has(i) ? (
-                      <pre className="whitespace-pre-wrap text-sm font-mono leading-relaxed text-zinc-300">{msg.content}</pre>
-                    ) : (
-                      <InfoMessage message={msg.content} />
-                    )}
+                    <InfoMessage
+                      message={msg.content}
+                      raw={preferences.markdownRawDefault ? !toggledRaw.has(i) : toggledRaw.has(i)}
+                    />
                     <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/[0.04] text-[11px] font-mono text-zinc-700">
                       {msg.role === "assistant" && msg.status && (
                         <span className={STATUS_TEXT[msg.status]}>{msg.status}</span>
@@ -394,12 +395,14 @@ export function AgentChatPanel({
                         {copiedMsg === i ? "copiado" : "copiar"}
                       </button>
                       <button
-                        onClick={() => setRawMessages((prev) => {
+                        onClick={() => setToggledRaw((prev) => {
                           const next = new Set(prev);
                           next.has(i) ? next.delete(i) : next.add(i);
                           return next;
                         })}
-                        className={`flex items-center gap-1 transition-colors ${rawMessages.has(i) ? "text-amber-400" : "hover:text-zinc-500"}`}
+                        className={`flex items-center gap-1 transition-colors ${
+                          (preferences.markdownRawDefault ? !toggledRaw.has(i) : toggledRaw.has(i)) ? "text-amber-400" : "hover:text-zinc-500"
+                        }`}
                       >
                         <Code className="w-3 h-3" />
                         raw

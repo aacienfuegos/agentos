@@ -6,8 +6,9 @@ import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { diffLines } from "diff";
-import { Copy, Check, ChevronDown, ChevronRight, ArrowDown } from "lucide-react";
+import { Copy, Check, ChevronDown, ChevronRight, ArrowDown, Code } from "lucide-react";
 import { api, LogEntry } from "@/lib/api";
+import { usePreferences } from "@/lib/usePreferences";
 
 interface LogEvent {
   level: "info" | "tool_use" | "tool_result" | "error" | "done";
@@ -141,9 +142,16 @@ const mdComponents: Components = {
   },
 };
 
-export function InfoMessage({ message }: { message: string }) {
+export function InfoMessage({ message, raw = false }: { message: string; raw?: boolean }) {
+  const { preferences } = usePreferences();
+  const sizeClass = preferences.textSize === "compact" ? "text-xs leading-snug" : "text-sm leading-relaxed";
+
+  if (raw) {
+    return <pre className={`${sizeClass} whitespace-pre-wrap font-mono text-zinc-300`}>{message}</pre>;
+  }
+
   return (
-    <div className="text-sm leading-relaxed">
+    <div className={sizeClass}>
       <ReactMarkdown components={mdComponents} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{message}</ReactMarkdown>
     </div>
   );
@@ -264,6 +272,8 @@ export function LogStream({
   const [visibleKinds, setVisibleKinds] = useState<Set<LogKind>>(
     () => new Set<LogKind>(["tools", "error"])
   );
+  const [toggledRaw, setToggledRaw] = useState<Set<number>>(new Set());
+  const { preferences } = usePreferences();
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
@@ -274,6 +284,14 @@ export function LogStream({
     setVisibleKinds((prev) => {
       const next = new Set(prev);
       next.has(kind) ? next.delete(kind) : next.add(kind);
+      return next;
+    });
+  };
+
+  const toggleRaw = (id: number) => {
+    setToggledRaw((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
   };
@@ -300,12 +318,12 @@ export function LogStream({
     if (logs.length === 0) return;
     lastEventMs.current = Date.now();
     setThinking(false);
-    if (atBottomRef.current) {
+    if (preferences.autoScroll && atBottomRef.current) {
       scrollToBottom();
     } else {
       setPendingCount((c) => c + 1);
     }
-  }, [logs, scrollToBottom]);
+  }, [logs, scrollToBottom, preferences.autoScroll]);
 
   // Activity indicator — shows after 2s of silence while live
   useEffect(() => {
@@ -440,9 +458,19 @@ export function LogStream({
             );
           }
           if (item.kind === "info") {
+            const isRaw = preferences.markdownRawDefault ? !toggledRaw.has(item.id) : toggledRaw.has(item.id);
             return (
-              <div key={item.id} className="px-1">
-                <InfoMessage message={item.message} />
+              <div key={item.id} className="group relative px-1">
+                <button
+                  onClick={() => toggleRaw(item.id)}
+                  title="Alternar markdown/raw"
+                  className={`absolute top-0 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded ${
+                    isRaw ? "text-amber-400" : "text-zinc-700 hover:text-zinc-400"
+                  }`}
+                >
+                  <Code className="w-3 h-3" />
+                </button>
+                <InfoMessage message={item.message} raw={isRaw} />
               </div>
             );
           }
