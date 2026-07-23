@@ -96,6 +96,14 @@ export interface ApiKeyCreated extends ApiKey {
   raw_key: string;
 }
 
+export interface KnowledgeConversation {
+  conversation_id: string;
+  knowledge_agent_id: string;
+  turn_count: number;
+  first_at: string;
+  last_at: string;
+}
+
 export interface ExecuteRequest {
   prompt: string;
   system_prompt?: string;
@@ -233,16 +241,24 @@ export const api = {
       apiFetch<void>(`/api/agents/${id}`, { method: "DELETE" }),
   },
   runs: {
-    list: (params?: { agent_id?: string; statuses?: string[]; limit?: number; offset?: number; original_run_id?: string; top_level?: boolean }) => {
+    list: (params?: { agent_id?: string; statuses?: string[]; limit?: number; offset?: number; original_run_id?: string; conversation_id?: string; top_level?: boolean }) => {
       const p = new URLSearchParams();
       if (params?.agent_id) p.set("agent_id", params.agent_id);
       if (params?.limit !== undefined) p.set("limit", String(params.limit));
       if (params?.offset !== undefined) p.set("offset", String(params.offset));
       if (params?.original_run_id) p.set("original_run_id", params.original_run_id);
+      if (params?.conversation_id) p.set("conversation_id", params.conversation_id);
       if (params?.top_level) p.set("top_level", "true");
       for (const s of params?.statuses ?? []) p.append("status", s);
       const qs = p.toString();
       return apiFetch<Run[]>(`/api/runs${qs ? `?${qs}` : ""}`);
+    },
+    knowledgeConversations: (params?: { limit?: number; offset?: number }) => {
+      const p = new URLSearchParams();
+      if (params?.limit !== undefined) p.set("limit", String(params.limit));
+      if (params?.offset !== undefined) p.set("offset", String(params.offset));
+      const qs = p.toString();
+      return apiFetch<KnowledgeConversation[]>(`/api/runs/knowledge-conversations${qs ? `?${qs}` : ""}`);
     },
     get: (id: string) => apiFetch<Run>(`/api/runs/${id}`),
     create: (agent_id: string, input_params: Record<string, unknown>) =>
