@@ -372,5 +372,9 @@ export const api = {
       }),
     search: (id: string, q: string) =>
       apiFetch<SearchResult[]>(`/api/knowledge-bases/${id}/search?${new URLSearchParams({ q })}`),
+    previewPrompt: (id: string, mode: "chat" | "context" = "chat") =>
+      apiFetch<{ system_prompt: string }>(
+        `/api/knowledge-bases/${id}/preview-prompt?${new URLSearchParams({ mode })}`,
+      ),
   },
 };

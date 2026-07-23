@@ -88,6 +88,34 @@ def test_delete_not_found(app_client: TestClient):
     assert app_client.delete("/api/knowledge-bases/nonexistent").status_code == 404
 
 
+def test_preview_prompt(app_client: TestClient, tmp_path: Path):
+    payload = {**KB_PAYLOAD, "knowledge_path": str(tmp_path / "homelab")}
+    app_client.post("/api/knowledge-bases", json=payload)
+    response = app_client.get("/api/knowledge-bases/homelab/preview-prompt")
+    assert response.status_code == 200
+    assert "Homelab" in response.json()["system_prompt"]
+
+
+def test_preview_prompt_context_mode(app_client: TestClient, tmp_path: Path):
+    payload = {**KB_PAYLOAD, "knowledge_path": str(tmp_path / "homelab")}
+    app_client.post("/api/knowledge-bases", json=payload)
+    response = app_client.get("/api/knowledge-bases/homelab/preview-prompt?mode=context")
+    assert response.status_code == 200
+    assert "Índice" in response.json()["system_prompt"] or "Base de conocimiento" in response.json()["system_prompt"]
+
+
+def test_preview_prompt_invalid_mode(app_client: TestClient, tmp_path: Path):
+    payload = {**KB_PAYLOAD, "knowledge_path": str(tmp_path / "homelab")}
+    app_client.post("/api/knowledge-bases", json=payload)
+    response = app_client.get("/api/knowledge-bases/homelab/preview-prompt?mode=bogus")
+    assert response.status_code == 400
+
+
+def test_preview_prompt_not_found(app_client: TestClient):
+    response = app_client.get("/api/knowledge-bases/nonexistent/preview-prompt")
+    assert response.status_code == 404
+
+
 def test_list_after_create(app_client: TestClient, tmp_path: Path):
     payload = {**KB_PAYLOAD, "knowledge_path": str(tmp_path / "homelab")}
     app_client.post("/api/knowledge-bases", json=payload)

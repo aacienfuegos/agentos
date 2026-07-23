@@ -255,6 +255,10 @@ export default function KnowledgeBaseDetail() {
   const [savingConfig, setSavingConfig] = useState(false);
   const [savedConfig, setSavedConfig] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showPromptPreview, setShowPromptPreview] = useState(false);
+  const [promptPreview, setPromptPreview] = useState("");
+  const [loadingPromptPreview, setLoadingPromptPreview] = useState(false);
+  const [promptPreviewError, setPromptPreviewError] = useState("");
 
   // Tools state
   const [chatTools, setChatTools] = useState<string[]>(["Read", "Write"]);
@@ -627,6 +631,20 @@ export default function KnowledgeBaseDetail() {
       router.push("/knowledge-bases");
     } catch {
       setDeleting(false);
+    }
+  };
+
+  const openPromptPreview = async () => {
+    setShowPromptPreview(true);
+    setLoadingPromptPreview(true);
+    setPromptPreviewError("");
+    try {
+      const { system_prompt } = await api.knowledgeBases.previewPrompt(id);
+      setPromptPreview(system_prompt);
+    } catch {
+      setPromptPreviewError("No se pudo cargar el preview del system prompt.");
+    } finally {
+      setLoadingPromptPreview(false);
     }
   };
 
@@ -1356,6 +1374,13 @@ export default function KnowledgeBaseDetail() {
                     className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2.5 text-sm text-zinc-300 font-mono leading-relaxed placeholder-zinc-800 focus:outline-none focus:border-amber-400/30 resize-none"
                   />
                 </div>
+                <button
+                  type="button"
+                  onClick={openPromptPreview}
+                  className="flex items-center gap-1.5 text-xs font-mono text-zinc-500 hover:text-amber-400 transition-colors"
+                >
+                  <Eye size={13} /> preview prompt
+                </button>
               </div>
             </div>
 
@@ -1377,6 +1402,37 @@ export default function KnowledgeBaseDetail() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {showPromptPreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+          onClick={() => setShowPromptPreview(false)}
+        >
+          <div
+            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-zinc-950 border border-zinc-800 rounded-xl p-6 shadow-xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-mono font-semibold text-zinc-200">Preview del system prompt</h2>
+              <button
+                onClick={() => setShowPromptPreview(false)}
+                className="text-zinc-600 hover:text-zinc-300 text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
+            {loadingPromptPreview ? (
+              <p className="text-xs font-mono text-zinc-600">cargando···</p>
+            ) : promptPreviewError ? (
+              <p className="text-xs font-mono text-red-400">{promptPreviewError}</p>
+            ) : (
+              <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap leading-relaxed bg-zinc-900 border border-white/[0.06] rounded-lg p-4">
+                {promptPreview}
+              </pre>
+            )}
+          </div>
         </div>
       )}
     </div>

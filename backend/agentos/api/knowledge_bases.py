@@ -18,7 +18,7 @@ from sqlmodel import Session, select
 from ..config import settings
 from ..database import get_session
 from ..models import KnowledgeBase, Run, RunStatus
-from ..runner.knowledge import default_knowledge_path, ensure_knowledge_dir
+from ..runner.knowledge import _build_system_prompt, default_knowledge_path, ensure_knowledge_dir
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +86,21 @@ def get_knowledge_base(kb_id: str, session: SessionDep) -> KnowledgeBase:
     if not kb:
         raise HTTPException(404, "Knowledge base not found")
     return kb
+
+
+class SystemPromptPreview(BaseModel):
+    system_prompt: str
+
+
+@router.get("/{kb_id}/preview-prompt")
+def preview_prompt(kb_id: str, session: SessionDep, mode: str = "chat") -> SystemPromptPreview:
+    if mode not in ("chat", "context"):
+        raise HTTPException(400, "mode must be 'chat' or 'context'")
+    kb = session.get(KnowledgeBase, kb_id)
+    if not kb:
+        raise HTTPException(404, "Knowledge base not found")
+    ensure_knowledge_dir(kb)
+    return SystemPromptPreview(system_prompt=_build_system_prompt(kb, mode=mode))
 
 
 @router.put("/{kb_id}")
