@@ -32,6 +32,7 @@ def list_runs(
     limit: int = Query(default=50, le=200),
     offset: int = 0,
     original_run_id: str | None = None,
+    top_level: bool = False,
 ) -> list[Run]:
     query = select(Run).order_by(Run.created_at.desc()).offset(offset).limit(limit)
     if agent_id:
@@ -42,6 +43,8 @@ def list_runs(
         query = query.where(
             func.json_extract(Run.input_params, "$.original_run_id") == original_run_id
         )
+    if top_level:
+        query = query.where(Run.triggered_by != "chat")
     return session.exec(query).all()
 
 
