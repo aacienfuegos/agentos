@@ -127,7 +127,7 @@ def _build_system_prompt(kb: KnowledgeBase, mode: str = "chat") -> str:
             "`knowledge.md`, o entradas en `knowledge.md` que ya no existen, actualiza el índice. "
             "Cuando crees o elimines un fichero, refleja el cambio en `knowledge.md` en la misma "
             "respuesta. Las descripciones deben indicar el propósito del fichero, no su contenido actual."
-            if mode == "chat" else ""
+            if not instructions.get("readonly") else ""
         )
     )
 
