@@ -10,7 +10,7 @@ export interface Agent {
   max_tokens: number;
   timeout_seconds: number;
   is_builtin: boolean;
-  knowledge_agent_id: string | null;
+  knowledge_base_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -22,7 +22,7 @@ export interface AgentGenerated {
   system_prompt: string;
   tools: string[];
   model: string;
-  knowledge_agent_id: string | null;
+  knowledge_base_id: string | null;
 }
 
 export interface Run {
@@ -99,7 +99,7 @@ export interface ApiKeyCreated extends ApiKey {
 
 export interface KnowledgeConversation {
   conversation_id: string;
-  knowledge_agent_id: string;
+  knowledge_base_id: string;
   turn_count: number;
   first_at: string;
   last_at: string;
@@ -126,14 +126,12 @@ export interface ExecuteAsyncResponse {
   status: string;
 }
 
-export interface KnowledgeAgent {
+export interface KnowledgeBase {
   id: string;
   name: string;
   description: string;
-  system_prompt: string;
   knowledge_path: string;
-  model: string;
-  tools: string[];
+  instructions: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
@@ -314,37 +312,41 @@ export const api = {
       method: "POST",
       body: JSON.stringify(req),
     }),
-  knowledgeAgents: {
-    list: () => apiFetch<KnowledgeAgent[]>("/api/knowledge-agents"),
-    get: (id: string) => apiFetch<KnowledgeAgent>(`/api/knowledge-agents/${id}`),
-    create: (data: Partial<KnowledgeAgent>) =>
-      apiFetch<KnowledgeAgent>("/api/knowledge-agents", { method: "POST", body: JSON.stringify(data) }),
-    update: (id: string, data: Partial<KnowledgeAgent>) =>
-      apiFetch<KnowledgeAgent>(`/api/knowledge-agents/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    knowledgeBases: {
+    list: () => apiFetch<KnowledgeBase[]>("/api/knowledge-bases"),
+    get: (id: string) => apiFetch<KnowledgeBase>(`/api/knowledge-bases/${id}`),
+    create: (data: Partial<KnowledgeBase>) =>
+      apiFetch<KnowledgeBase>("/api/knowledge-bases", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<KnowledgeBase>) =>
+      apiFetch<KnowledgeBase>(`/api/knowledge-bases/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (id: string) =>
-      apiFetch<void>(`/api/knowledge-agents/${id}`, { method: "DELETE" }),
+      apiFetch<void>(`/api/knowledge-bases/${id}`, { method: "DELETE" }),
     files: {
       list: (id: string) =>
-        apiFetch<KnowledgeFile[]>(`/api/knowledge-agents/${id}/files`),
+        apiFetch<KnowledgeFile[]>(`/api/knowledge-bases/${id}/files`),
       get: (id: string, path: string) =>
-        fetch(`${BASE_URL}/api/knowledge-agents/${id}/files/${path}`, { credentials: "include" })
+        fetch(`${BASE_URL}/api/knowledge-bases/${id}/files/${path}`, { credentials: "include" })
           .then((r) => { if (!r.ok) throw new Error(`API error ${r.status}`); return r.text(); }),
       update: (id: string, path: string, content: string) =>
-        apiFetch<KnowledgeFile>(`/api/knowledge-agents/${id}/files/${path}`, {
+        apiFetch<KnowledgeFile>(`/api/knowledge-bases/${id}/files/${path}`, {
           method: "PUT",
           body: content,
           headers: { "Content-Type": "text/plain" },
         }),
       delete: (id: string, path: string) =>
-        apiFetch<void>(`/api/knowledge-agents/${id}/files/${path}`, { method: "DELETE" }),
+        apiFetch<void>(`/api/knowledge-bases/${id}/files/${path}`, { method: "DELETE" }),
       upload: async (id: string, files: File[]): Promise<{ written: string[]; errors: string[] }> => {
         const formData = new FormData();
-        for (const file of files) {
-          // webkitRelativePath preserves folder structure when uploading a directory
-          const path = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
-          formData.append("files", file, path);
+        const paths = files.map(
+          (f) => (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name,
+        );
+        const roots = new Set(paths.map((p) => p.split("/")[0]));
+        const stripRoot = roots.size === 1 && paths.some((p) => p.includes("/"));
+        for (let i = 0; i < files.length; i++) {
+          const path = stripRoot ? paths[i].split("/").slice(1).join("/") : paths[i];
+          formData.append("files", files[i], path || files[i].name);
         }
-        const res = await fetch(`${BASE_URL}/api/knowledge-agents/${id}/upload`, {
+        const res = await fetch(`${BASE_URL}/api/knowledge-bases/${id}/upload`, {
           method: "POST",
           body: formData,
           credentials: "include",
@@ -359,7 +361,7 @@ export const api = {
       },
     },
     query: (id: string, userMessage: string, resumeSessionId?: string, conversationId?: string, tools?: string[]) =>
-      apiFetch<{ run_id: string }>(`/api/knowledge-agents/${id}/query`, {
+      apiFetch<{ run_id: string }>(`/api/knowledge-bases/${id}/query`, {
         method: "POST",
         body: JSON.stringify({
           user_message: userMessage,
@@ -369,6 +371,6 @@ export const api = {
         }),
       }),
     search: (id: string, q: string) =>
-      apiFetch<SearchResult[]>(`/api/knowledge-agents/${id}/search?${new URLSearchParams({ q })}`),
+      apiFetch<SearchResult[]>(`/api/knowledge-bases/${id}/search?${new URLSearchParams({ q })}`),
   },
 };

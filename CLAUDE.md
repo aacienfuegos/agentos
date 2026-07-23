@@ -191,7 +191,7 @@ Cerrados y en producción (main): phase:core, phase:scheduler, phase:knowledge-1
 | Fase | Issues | Descripción |
 |------|--------|-------------|
 | phase:polish | #20 | Caddy + Tailscale para acceso seguro en producción |
-| phase:knowledge-2 | #33, #34, #36 | Knowledge Agent: system prompt auto-generado, automatizaciones |
+| phase:knowledge-2 | #33, #34, #36, #223 | Knowledge Agent: system prompt auto-generado, automatizaciones, preview del system prompt |
 | phase:multimodel | #37–#45 | ⚠️ NEEDS-ANALYSIS — issues originales asumían runners OpenAI/Gemini (incompatible con restricción Claude Pro). Pendiente de redefinición: multi-modelo dentro de Claude (sonnet/haiku/opus vía `--model`) u otro enfoque. |
 | phase:usage-limits | #214–#217 | Visión y gestión de límites de uso Claude Pro: origen de % sesión (5h) y semanal (#214, spike), persistencia por run (#215), gauges en frontend + % contexto por conversación (#216), pausa de cola y auto-reanudación al resetear el límite (#217) |
 | phase:projects | #218–#220 | "Proyectos": chat y ejecución de agentes sobre repos de desarrollo, extensión de KnowledgeAgent (#218). #219 formaliza como needs-analysis independiente el diseño de agentes de infraestructura multi-repo (scrum-master/arquitecto/deployer) que antes vivía como placeholder en este roadmap. #220 es la duda sobre slash commands explícitos en el chat, capturada desde `NOTES.md`. |

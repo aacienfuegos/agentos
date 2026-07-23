@@ -32,7 +32,7 @@ Given a description, generate a complete agent definition as a JSON object with 
 - system_prompt: detailed system prompt that tells the agent how to behave, what its role is, and how to approach tasks. Be specific and actionable.
 - tools: array of tool names the agent needs, choose only from: {tools}
 - model: one of "claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-8". Choose based on task complexity.
-- knowledge_agent_id: id of a knowledge base to link, or null. Choose one if the agent clearly needs a specific knowledge base.{knowledge_section}
+- knowledge_base_id: id of a knowledge base to link, or null. Choose one if the agent clearly needs a specific knowledge base.{knowledge_section}
 
 Rules:
 - system_prompt should be 3-8 sentences, specific to the agent's purpose
@@ -57,7 +57,7 @@ class AgentCreate(BaseModel):
     model: str = "claude-sonnet-4-6"
     max_tokens: int = 4096
     timeout_seconds: int = 300
-    knowledge_agent_id: str | None = None
+    knowledge_base_id: str | None = None
 
 
 class AgentUpdate(BaseModel):
@@ -68,7 +68,7 @@ class AgentUpdate(BaseModel):
     model: str | None = None
     max_tokens: int | None = None
     timeout_seconds: int | None = None
-    knowledge_agent_id: str | None = None
+    knowledge_base_id: str | None = None
 
 
 class AgentGenerateRequest(BaseModel):
@@ -82,7 +82,7 @@ class AgentGenerateResponse(BaseModel):
     system_prompt: str
     tools: list[str]
     model: str
-    knowledge_agent_id: str | None = None
+    knowledge_base_id: str | None = None
 
 
 @router.get("")
@@ -95,9 +95,9 @@ async def generate_agent(req: AgentGenerateRequest, session: SessionDep) -> Agen
     if not req.description.strip():
         raise HTTPException(400, "La descripción no puede estar vacía")
 
-    from ..models import KnowledgeAgent
+    from ..models import KnowledgeBase
     from sqlmodel import select as sa_select
-    knowledge_agents = session.exec(sa_select(KnowledgeAgent)).all()
+    knowledge_agents = session.exec(sa_select(KnowledgeBase)).all()
     if knowledge_agents:
         entries = "\n".join(
             f"- {ka.id} → {ka.name}: {ka.description}" for ka in knowledge_agents
@@ -149,8 +149,8 @@ async def generate_agent(req: AgentGenerateRequest, session: SessionDep) -> Agen
         raise HTTPException(500, "La generación produjo JSON inválido")
 
     valid_ka_ids = {ka.id for ka in knowledge_agents}
-    raw_ka_id = data.get("knowledge_agent_id")
-    knowledge_agent_id = raw_ka_id if raw_ka_id in valid_ka_ids else None
+    raw_kb_id = data.get("knowledge_base_id")
+    knowledge_base_id = raw_kb_id if raw_kb_id in valid_ka_ids else None
 
     return AgentGenerateResponse(
         id=str(data.get("id", ""))[:30],
@@ -159,7 +159,7 @@ async def generate_agent(req: AgentGenerateRequest, session: SessionDep) -> Agen
         system_prompt=str(data.get("system_prompt", "")),
         tools=[t for t in data.get("tools", []) if t in _AVAILABLE_TOOLS],
         model=data.get("model", "claude-sonnet-4-6"),
-        knowledge_agent_id=knowledge_agent_id,
+        knowledge_base_id=knowledge_base_id,
     )
 
 

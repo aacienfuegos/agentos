@@ -78,10 +78,10 @@ export default function RunDetail() {
       if (r.agent_id.startsWith("knowledge:")) {
         const kaId = r.agent_id.slice("knowledge:".length);
         try {
-          const ka = await api.knowledgeAgents.get(kaId);
+          const ka = await api.knowledgeBases.get(kaId);
           setAgentName(ka.name);
           const convId = (r.input_params as Record<string, string>).conversation_id;
-          setAgentLink(`/knowledge-agents/${kaId}${convId ? `?conv=${convId}` : ""}`);
+          setAgentLink(`/knowledge-bases/${kaId}${convId ? `?conv=${convId}` : ""}`);
         } catch { setAgentName(r.agent_id); }
       } else if (r.agent_id === "__execute__") {
         const keyName = (r.input_params as Record<string, string>).api_key_name;
