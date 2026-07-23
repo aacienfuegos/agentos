@@ -30,8 +30,16 @@ interface LiveLogEvent {
   metadata?: Record<string, unknown> | null;
 }
 
+interface ConversationSummary {
+  id: string;
+  firstMessage: string;
+  turnCount: number;
+  lastAt: string;
+}
+
 interface AgentChatPanelProps {
   agentId: string;
+  originalRunId: string;
   initialSessionId: string;
   initialOutput: string;
   backendUrl: string;
@@ -39,8 +47,19 @@ interface AgentChatPanelProps {
   onConversationChange: (id: string | null) => void;
 }
 
+function relTime(iso: string): string {
+  const diff = Date.now() - new Date(iso.endsWith("Z") ? iso : iso + "Z").getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 2) return "ahora";
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
 export function AgentChatPanel({
   agentId,
+  originalRunId,
   initialSessionId,
   initialOutput,
   backendUrl,
@@ -48,6 +67,7 @@ export function AgentChatPanel({
   onConversationChange,
 }: AgentChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [latestSessionId, setLatestSessionId] = useState<string>(initialSessionId);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -57,8 +77,35 @@ export function AgentChatPanel({
   const liveEsRef = useRef<EventSource | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const loadConversations = useCallback(async () => {
+    const runs = await api.runs.list({ original_run_id: originalRunId, limit: 200 });
+    const groups = new Map<string, Run[]>();
+    for (const run of runs) {
+      const convId = (run.input_params as Record<string, string>).conversation_id;
+      if (!convId) continue;
+      if (!groups.has(convId)) groups.set(convId, []);
+      groups.get(convId)!.push(run);
+    }
+    const summaries: ConversationSummary[] = [];
+    for (const [convId, convRuns] of groups) {
+      const sorted = [...convRuns].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      summaries.push({
+        id: convId,
+        firstMessage: String(
+          (sorted[0].input_params as Record<string, unknown>).user_message ?? ""
+        ).slice(0, 50),
+        turnCount: sorted.length,
+        lastAt: sorted[sorted.length - 1].created_at,
+      });
+    }
+    summaries.sort((a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime());
+    setConversations(summaries);
+  }, [originalRunId]);
+
   const loadConversationHistory = useCallback(async (convId: string) => {
-    const allRuns = await api.runs.list({ agent_id: agentId, limit: 200 });
+    const allRuns = await api.runs.list({ original_run_id: originalRunId, limit: 200 });
     const convRuns = allRuns
       .filter((r) => (r.input_params as Record<string, string>).conversation_id === convId)
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
@@ -77,7 +124,11 @@ export function AgentChatPanel({
     setMessages(msgs);
     const lastWithSession = [...convRuns].reverse().find((r) => r.session_id);
     if (lastWithSession?.session_id) setLatestSessionId(lastWithSession.session_id);
-  }, [agentId]);
+  }, [originalRunId]);
+
+  useEffect(() => {
+    loadConversations();
+  }, [loadConversations]);
 
   useEffect(() => {
     if (conversationId && !sending) loadConversationHistory(conversationId);
@@ -90,6 +141,12 @@ export function AgentChatPanel({
   useEffect(() => {
     return () => { liveEsRef.current?.close(); };
   }, []);
+
+  const resetToNew = () => {
+    setMessages([]);
+    setLatestSessionId(initialSessionId);
+    onConversationChange(null);
+  };
 
   const finalizeRun = async (run_id: string) => {
     liveEsRef.current?.close();
@@ -116,6 +173,7 @@ export function AgentChatPanel({
       return updated;
     });
     setSending(false);
+    loadConversations();
   };
 
   const sendMessage = async () => {
@@ -140,6 +198,7 @@ export function AgentChatPanel({
         user_message: userMsg,
         resume_session_id: latestSessionId,
         conversation_id: convId,
+        original_run_id: originalRunId,
         ...(isFirstMessage && initialOutput ? { initial_context: initialOutput } : {}),
       });
       const run_id = run.id;
@@ -184,19 +243,41 @@ export function AgentChatPanel({
 
   return (
     <div className="flex flex-col h-full gap-3">
-      <div className="shrink-0 flex items-center justify-end">
-        {conversationId && (
-          <span className="text-[11px] font-mono text-zinc-800 mr-auto">conv {conversationId.slice(0, 8)}…</span>
-        )}
+      {/* Conversation selector */}
+      <div className="shrink-0 flex items-center gap-2 flex-wrap">
+        {conversations.map((conv) => (
+          <button
+            key={conv.id}
+            onClick={() => onConversationChange(conv.id)}
+            disabled={sending}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono transition-colors disabled:opacity-50 ${
+              conversationId === conv.id
+                ? "bg-amber-400/10 border border-amber-400/20 text-amber-400"
+                : "bg-white/[0.03] border border-white/[0.06] text-zinc-500 hover:text-zinc-300"
+            }`}
+            title={conv.firstMessage}
+          >
+            <span className="max-w-[120px] truncate">{conv.firstMessage || conv.id.slice(0, 8)}</span>
+            <span className="text-zinc-700">·</span>
+            <span>{conv.turnCount}t</span>
+            <span className="text-zinc-700">·</span>
+            <span>{relTime(conv.lastAt)}</span>
+          </button>
+        ))}
         <button
-          onClick={() => { setMessages([]); setLatestSessionId(initialSessionId); onConversationChange(null); }}
+          onClick={resetToNew}
           disabled={sending}
-          className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors disabled:opacity-30"
+          className={`px-2.5 py-1 rounded-lg text-[11px] font-mono transition-colors disabled:opacity-30 ${
+            conversationId === null
+              ? "bg-white/[0.06] border border-white/[0.1] text-zinc-300"
+              : "text-zinc-600 hover:text-zinc-400 border border-transparent"
+          }`}
         >
-          nueva conversación ↺
+          + nueva
         </button>
       </div>
 
+      {/* Messages */}
       <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] p-4 space-y-4">
         {messages.length === 0 && (
           <div className="flex justify-start">
@@ -297,6 +378,7 @@ export function AgentChatPanel({
         <div ref={bottomRef} />
       </div>
 
+      {/* Input */}
       <div className="shrink-0 flex gap-2">
         <textarea
           value={input}

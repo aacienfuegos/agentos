@@ -4,6 +4,7 @@ from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from ..config import settings
@@ -30,12 +31,17 @@ def list_runs(
     status: list[RunStatus] = Query(default=[]),
     limit: int = Query(default=50, le=200),
     offset: int = 0,
+    original_run_id: str | None = None,
 ) -> list[Run]:
     query = select(Run).order_by(Run.created_at.desc()).offset(offset).limit(limit)
     if agent_id:
         query = query.where(Run.agent_id == agent_id)
     if status:
         query = query.where(Run.status.in_(status))
+    if original_run_id:
+        query = query.where(
+            func.json_extract(Run.input_params, "$.original_run_id") == original_run_id
+        )
     return session.exec(query).all()
 
 
@@ -45,7 +51,8 @@ async def create_run(run: RunCreate, session: SessionDep) -> Run:
     if not agent:
         raise HTTPException(404, "Agent not found")
 
-    db_run = Run(agent_id=run.agent_id, input_params=run.input_params, triggered_by="manual")
+    triggered_by = "chat" if "conversation_id" in run.input_params else "manual"
+    db_run = Run(agent_id=run.agent_id, input_params=run.input_params, triggered_by=triggered_by)
     session.add(db_run)
     session.commit()
     session.refresh(db_run)

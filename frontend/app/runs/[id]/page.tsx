@@ -138,7 +138,6 @@ export default function RunDetail() {
   const totalTokens = (run.tokens_input ?? 0) + (run.tokens_output ?? 0);
   const canChat =
     run.status === "success" &&
-    run.session_id != null &&
     !run.agent_id.startsWith("knowledge:") &&
     run.agent_id !== "__execute__";
 
@@ -276,7 +275,8 @@ export default function RunDetail() {
           <TabsContent value="chat" className="mt-2 min-h-0 overflow-hidden flex flex-col" keepMounted>
             <AgentChatPanel
               agentId={run.agent_id}
-              initialSessionId={run.session_id!}
+              originalRunId={id}
+              initialSessionId={run.session_id ?? ""}
               initialOutput={run.output ?? ""}
               backendUrl={backendUrl}
               conversationId={conversationId}

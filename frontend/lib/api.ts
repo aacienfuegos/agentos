@@ -233,11 +233,12 @@ export const api = {
       apiFetch<void>(`/api/agents/${id}`, { method: "DELETE" }),
   },
   runs: {
-    list: (params?: { agent_id?: string; statuses?: string[]; limit?: number; offset?: number }) => {
+    list: (params?: { agent_id?: string; statuses?: string[]; limit?: number; offset?: number; original_run_id?: string }) => {
       const p = new URLSearchParams();
       if (params?.agent_id) p.set("agent_id", params.agent_id);
       if (params?.limit !== undefined) p.set("limit", String(params.limit));
       if (params?.offset !== undefined) p.set("offset", String(params.offset));
+      if (params?.original_run_id) p.set("original_run_id", params.original_run_id);
       for (const s of params?.statuses ?? []) p.append("status", s);
       const qs = p.toString();
       return apiFetch<Run[]>(`/api/runs${qs ? `?${qs}` : ""}`);

@@ -32,6 +32,22 @@ const STATUS_LABEL: Record<string, string> = {
 const STATUSES: Run["status"][] = ["running", "success", "failed", "cancelled"];
 const PAGE_SIZE = 20;
 
+const TRIGGERED_BY_BADGE: Record<string, string> = {
+  manual:   "bg-zinc-800 text-zinc-400 border-zinc-700/50",
+  schedule: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+  api:      "bg-sky-500/10 text-sky-400 border-sky-500/20",
+  chat:     "bg-amber-400/10 text-amber-400 border-amber-400/20",
+};
+
+function TriggeredByBadge({ value }: { value: string }) {
+  const cls = TRIGGERED_BY_BADGE[value] ?? "bg-zinc-800 text-zinc-500 border-zinc-700/50";
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-mono border ${cls}`}>
+      {value}
+    </span>
+  );
+}
+
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
 
 function fmt(dt: string | null): string {
@@ -190,7 +206,9 @@ export default function RunsList() {
                       ? fmtTokens(run.tokens_input + run.tokens_output)
                       : "—"}
                   </td>
-                  <td className="px-4 py-3 text-zinc-700 text-xs hidden lg:table-cell">{run.triggered_by}</td>
+                  <td className="px-4 py-3 hidden lg:table-cell">
+                    <TriggeredByBadge value={run.triggered_by} />
+                  </td>
                 </tr>
               ))
             )}
