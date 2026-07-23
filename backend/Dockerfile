@@ -27,8 +27,11 @@ COPY pyproject.toml uv.lock* ./
 # Install dependencies (without dev)
 RUN uv sync --frozen --no-dev
 
-# Copy source
+# Copy source and migration files
 COPY agentos/ ./agentos/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
+COPY entrypoint.sh ./
 
 # Crear usuario no-root — claude --dangerously-skip-permissions prohíbe root
 # UID configurable via build arg para que coincida con el usuario del host en dev
@@ -39,4 +42,5 @@ RUN useradd -m -u ${UID} -G docker worker \
 
 USER worker
 
-CMD ["uv", "run", "uvicorn", "agentos.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["./entrypoint.sh"]
+CMD ["uvicorn", "agentos.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -19,6 +19,7 @@ dependencies = [
     "pyjwt>=2.13.0",
     "starlette>=1.0.1",
     "python-multipart>=0.0.32",
+    "alembic>=1.18.5",
 ]
 
 [project.optional-dependencies]
