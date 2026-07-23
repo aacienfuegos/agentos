@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { api, Run, Agent, KnowledgeAgent, KnowledgeConversation } from "@/lib/api";
+import { api, Run, Agent, KnowledgeBase, KnowledgeConversation } from "@/lib/api";
 import { fmtTokens } from "@/lib/utils";
 import { ChevronRight, ChevronDown } from "lucide-react";
 
@@ -85,7 +85,7 @@ export default function RunsList() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [convs, setConvs] = useState<KnowledgeConversation[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [kaMap, setKaMap] = useState<Record<string, KnowledgeAgent>>({});
+  const [kaMap, setKaMap] = useState<Record<string, KnowledgeBase>>({});
   const [statusFilter, setStatusFilter] = useState<Set<Run["status"]>>(new Set());
   const [agentFilter, setAgentFilter] = useState<string>("");
   const [page, setPage] = useState(0);
@@ -121,10 +121,10 @@ export default function RunsList() {
   useEffect(() => {
     Promise.all([
       api.agents.list(),
-      api.knowledgeAgents.list(),
+      api.knowledgeBases.list(),
     ]).then(([agList, kaList]) => {
       setAgents(agList);
-      setKaMap(Object.fromEntries(kaList.map((ka) => [ka.id, ka])));
+      setKaMap(Object.fromEntries(kaList.map((kb) => [kb.id, kb])));
     });
   }, []);
 
@@ -231,7 +231,7 @@ export default function RunsList() {
 
                 if (item.kind === "conv") {
                   const conv = item.data;
-                  const kaName = kaMap[conv.knowledge_agent_id]?.name ?? conv.knowledge_agent_id;
+                  const kaName = kaMap[conv.knowledge_base_id]?.name ?? conv.knowledge_base_id;
                   const key = `conv:${conv.conversation_id}`;
                   const isExpanded = expandedRuns.has(key);
                   const children = childRuns[key];
@@ -251,7 +251,7 @@ export default function RunsList() {
                             {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                           </button>
                           <Link
-                            href={`/knowledge-agents/${conv.knowledge_agent_id}?conv=${conv.conversation_id}`}
+                            href={`/knowledge-bases/${conv.knowledge_base_id}?conv=${conv.conversation_id}`}
                             className="text-zinc-300 hover:text-amber-400 transition-colors font-medium"
                           >
                             <span className="text-zinc-600 font-normal">Knowledge · </span>{kaName}

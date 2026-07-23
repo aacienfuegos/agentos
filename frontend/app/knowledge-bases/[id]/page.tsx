@@ -1,0 +1,1378 @@
+"use client";
+
+import { useEffect, useState, useRef, useCallback } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { api, KnowledgeBase, KnowledgeFile, Run, SearchResult, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
+import { InfoMessage } from "@/components/LogStream";
+import { fmtTokens, generateUUID } from "@/lib/utils";
+import { Copy, Check, Code, Pencil, RotateCcw, Save, Trash2, Eye } from "lucide-react";
+import hljs from "highlight.js";
+
+const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
+
+const EXT_LANG: Record<string, string> = {
+  py: "python", js: "javascript", jsx: "javascript",
+  ts: "typescript", tsx: "typescript", json: "json",
+  yaml: "yaml", yml: "yaml", toml: "toml",
+  sh: "bash", bash: "bash", css: "css",
+  html: "html", htm: "html", sql: "sql",
+  rs: "rust", go: "go", java: "java",
+  cpp: "cpp", c: "c", h: "c", xml: "xml",
+};
+
+function fileExt(path: string): string {
+  return path.split(".").pop()?.toLowerCase() ?? "";
+}
+
+function fileHighlightLang(path: string): string | null {
+  return EXT_LANG[fileExt(path)] ?? null;
+}
+
+type View = "chat" | "archivos" | "conversations" | "config";
+
+interface ConversationSummary {
+  convId: string;
+  firstMessage: string;
+  msgCount: number;
+  lastAt: string;
+}
+
+const STATUS_TEXT: Record<string, string> = {
+  pending: "text-zinc-500",
+  running: "text-sky-400",
+  success: "text-emerald-400",
+  failed: "text-red-400",
+  cancelled: "text-zinc-600",
+};
+
+interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  run_id?: string;
+  status?: Run["status"];
+  tokens?: number;
+}
+
+interface LiveLogEvent {
+  level: string;
+  message: string;
+  metadata?: Record<string, unknown> | null;
+}
+
+// ---------------------------------------------------------------------------
+// Search helpers
+// ---------------------------------------------------------------------------
+
+function parseSearchTerms(q: string): { terms: string[]; phrases: string[]; caseSensitive: boolean } {
+  const caseSensitive = /[A-Z]/.test(q);
+  const phrases: string[] = [];
+  for (const m of q.matchAll(/"([^"]+)"/g)) phrases.push(m[1]);
+  const remaining = q.replace(/"[^"]+"/g, " ");
+  return { terms: remaining.split(/\s+/).filter(Boolean), phrases, caseSensitive };
+}
+
+function HighlightedLine({
+  text, terms, phrases, caseSensitive,
+}: {
+  text: string; terms: string[]; phrases: string[]; caseSensitive: boolean;
+}) {
+  const needles = [...phrases, ...terms].filter(Boolean).sort((a, b) => b.length - a.length);
+  if (needles.length === 0) return <span>{text}</span>;
+  const pattern = needles.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const parts = text.split(new RegExp(`(${pattern})`, caseSensitive ? "g" : "gi"));
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1
+          ? <mark key={i} className="bg-amber-400/25 text-amber-100 rounded-sm px-0.5 not-italic font-normal">{part}</mark>
+          : <span key={i}>{part}</span>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// File browser helpers
+// ---------------------------------------------------------------------------
+
+function FileTree({
+  files,
+  selected,
+  onSelect,
+  collapsed,
+  onToggle,
+  search,
+}: {
+  files: KnowledgeFile[];
+  selected: string | null;
+  onSelect: (path: string) => void;
+  collapsed: Set<string>;
+  onToggle: (path: string) => void;
+  search: string;
+}) {
+  const query = search.toLowerCase();
+
+  const hasMatch = (path: string): boolean => {
+    const file = files.find((f) => f.path === path);
+    if (!file) return false;
+    if (!file.is_dir) return file.path.toLowerCase().includes(query);
+    return files.some((f) => !f.is_dir && f.path.startsWith(path + "/") && f.path.toLowerCase().includes(query));
+  };
+
+  const renderEntries = (parentPath: string, depth: number): React.ReactNode => {
+    const entries = files.filter((f) => {
+      const parts = f.path.split("/");
+      const parent = parts.slice(0, -1).join("/");
+      return parent === parentPath;
+    });
+    entries.sort((a, b) => {
+      if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+      return a.path.localeCompare(b.path);
+    });
+    return entries.map((f) => {
+      const name = f.path.split("/").at(-1)!;
+      const indent = depth * 12;
+      if (query && !hasMatch(f.path)) return null;
+      if (f.is_dir) {
+        const isCollapsed = !query && collapsed.has(f.path);
+        return (
+          <div key={f.path}>
+            <button
+              onClick={() => !query && onToggle(f.path)}
+              className="w-full flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors text-left"
+              style={{ paddingLeft: `${8 + indent}px` }}
+            >
+              <span className="shrink-0">{isCollapsed ? "▸" : "▾"}</span>
+              <span>{name}/</span>
+            </button>
+            {!isCollapsed && renderEntries(f.path, depth + 1)}
+          </div>
+        );
+      }
+      return (
+        <button
+          key={f.path}
+          onClick={() => onSelect(f.path)}
+          className={`w-full flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono text-left transition-colors rounded ${
+            selected === f.path
+              ? "bg-amber-400/10 text-amber-300"
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]"
+          }`}
+          style={{ paddingLeft: `${8 + indent}px` }}
+        >
+          <span className="text-zinc-700">·</span>
+          <span className="truncate">{name}</span>
+          {f.size != null && (
+            <span className="ml-auto text-zinc-800 shrink-0">{f.size < 1024 ? `${f.size}b` : `${(f.size / 1024).toFixed(1)}k`}</span>
+          )}
+        </button>
+      );
+    });
+  };
+
+  return <div className="space-y-0">{renderEntries("", 0)}</div>;
+}
+
+// ---------------------------------------------------------------------------
+// Instructions config
+// ---------------------------------------------------------------------------
+
+const INSTRUCTION_FLAGS = [
+  { key: "cite_verbatim" as const, label: "Citar textualmente" },
+  { key: "no_recommendations" as const, label: "Sin recomendaciones" },
+  { key: "require_source_refs" as const, label: "Referenciar fuente" },
+  { key: "readonly" as const, label: "Solo lectura" },
+];
+
+const DEFAULT_INSTRUCTIONS = {
+  cite_verbatim: false,
+  no_recommendations: false,
+  require_source_refs: false,
+  readonly: false,
+  free_text: "",
+};
+
+type Instructions = typeof DEFAULT_INSTRUCTIONS;
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
+export default function KnowledgeBaseDetail() {
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [agent, setAgent] = useState<KnowledgeBase | null>(null);
+  const [view, setView] = useState<View>("chat");
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(searchParams.get("conv"));
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [latestSessionId, setLatestSessionId] = useState<string | null>(null);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+
+  // File browser state
+  const [files, setFiles] = useState<KnowledgeFile[]>([]);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [fileContent, setFileContent] = useState("");
+  const [editingContent, setEditingContent] = useState("");
+  const [loadingFile, setLoadingFile] = useState(false);
+  const [savingFile, setSavingFile] = useState(false);
+  const [deletingFile, setDeletingFile] = useState(false);
+  const [newFilePath, setNewFilePath] = useState("");
+  const [showNewFile, setShowNewFile] = useState(false);
+  const [filePreview, setFilePreview] = useState(true);
+  const [copiedFile, setCopiedFile] = useState(false);
+  const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
+  const [fileSearch, setFileSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [contentSearchQuery, setContentSearchQuery] = useState("");
+  const [pendingScrollLine, setPendingScrollLine] = useState<number | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Upload state
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<{ written: string[]; errors: string[] } | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+
+  // Config state
+  const [configForm, setConfigForm] = useState({
+    name: "",
+    description: "",
+    knowledge_path: "",
+    instructions: { ...DEFAULT_INSTRUCTIONS },
+  });
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [savedConfig, setSavedConfig] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // Tools state
+  const [chatTools, setChatTools] = useState<string[]>(["Read", "Write"]);
+  const [showToolsMenu, setShowToolsMenu] = useState(false);
+  const [rawMessages, setRawMessages] = useState<Set<number>>(new Set());
+  const [copiedMsg, setCopiedMsg] = useState<number | null>(null);
+  const [liveLogs, setLiveLogs] = useState<LiveLogEvent[]>([]);
+  const liveEsRef = useRef<EventSource | null>(null);
+  const toolsMenuRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
+
+  const setConversation = (convId: string | null) => {
+    setConversationId(convId);
+    if (convId) {
+      router.replace(`/knowledge-bases/${id}?conv=${convId}`, { scroll: false });
+    } else {
+      router.replace(`/knowledge-bases/${id}`, { scroll: false });
+    }
+  };
+
+  const loadAgent = async () => {
+    const a = await api.knowledgeBases.get(id);
+    setAgent(a);
+    const instr = a.instructions as Partial<Instructions>;
+    setConfigForm({
+      name: a.name,
+      description: a.description,
+      knowledge_path: a.knowledge_path,
+      instructions: {
+        cite_verbatim: instr.cite_verbatim ?? false,
+        no_recommendations: instr.no_recommendations ?? false,
+        require_source_refs: instr.require_source_refs ?? false,
+        readonly: instr.readonly ?? false,
+        free_text: (instr.free_text as string) ?? "",
+      },
+    });
+    setChatTools(["Read", "Write"]);
+  };
+
+  const loadFiles = useCallback(async () => {
+    setLoadingFiles(true);
+    try {
+      const list = await api.knowledgeBases.files.list(id);
+      setFiles(list);
+    } finally {
+      setLoadingFiles(false);
+    }
+  }, [id]);
+
+  const selectFile = async (path: string, targetLine?: number) => {
+    setSelectedFile(path);
+    setFilePreview(targetLine === undefined);
+    setCopiedFile(false);
+    if (targetLine !== undefined) setPendingScrollLine(targetLine);
+    setLoadingFile(true);
+    try {
+      const content = await api.knowledgeBases.files.get(id, path);
+      setFileContent(content);
+      setEditingContent(content);
+    } catch {
+      setFileContent("");
+      setEditingContent("");
+    } finally {
+      setLoadingFile(false);
+    }
+  };
+
+  const saveFile = async () => {
+    if (!selectedFile) return;
+    setSavingFile(true);
+    try {
+      await api.knowledgeBases.files.update(id, selectedFile, editingContent);
+      setFileContent(editingContent);
+      await loadFiles();
+    } finally {
+      setSavingFile(false);
+    }
+  };
+
+  const deleteFile = async () => {
+    if (!selectedFile || !confirm(`¿Eliminar "${selectedFile}"?`)) return;
+    setDeletingFile(true);
+    try {
+      await api.knowledgeBases.files.delete(id, selectedFile);
+      setSelectedFile(null);
+      setFileContent("");
+      setEditingContent("");
+      await loadFiles();
+    } finally {
+      setDeletingFile(false);
+    }
+  };
+
+  const createFile = async () => {
+    if (!newFilePath.trim()) return;
+    await api.knowledgeBases.files.update(id, newFilePath.trim(), "");
+    setShowNewFile(false);
+    setNewFilePath("");
+    await loadFiles();
+    selectFile(newFilePath.trim());
+  };
+
+  const triggerContentSearch = async (q: string) => {
+    setSearching(true);
+    setContentSearchQuery(q);
+    try {
+      const results = await api.knowledgeBases.search(id, q);
+      setSearchResults(results);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchResults(null);
+    setContentSearchQuery("");
+    setFileSearch("");
+  };
+
+  const handleUpload = useCallback(async (inputFiles: FileList | File[]) => {
+    const arr = Array.from(inputFiles);
+    if (!arr.length) return;
+    setUploading(true);
+    setUploadResult(null);
+    try {
+      const result = await api.knowledgeBases.files.upload(id, arr);
+      setUploadResult(result);
+      await loadFiles();
+      if (!selectedFile && result.written.length > 0) {
+        selectFile(result.written[0]);
+      }
+    } catch (err) {
+      setUploadResult({ written: [], errors: [err instanceof Error ? err.message : "Error desconocido"] });
+    } finally {
+      setUploading(false);
+    }
+  }, [id, selectedFile, loadFiles]);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files);
+  }, [handleUpload]);
+
+  const loadConversationHistory = async (convId: string) => {
+    const allRuns = await api.runs.list({ agent_id: `knowledge:${id}`, limit: 200 });
+    const convRuns = allRuns
+      .filter((r) => (r.input_params as Record<string, string>).conversation_id === convId)
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+    const msgs: ChatMessage[] = [];
+    for (const run of convRuns) {
+      msgs.push({ role: "user", content: (run.input_params as Record<string, string>).user_message ?? "" });
+      msgs.push({
+        role: "assistant",
+        content: run.status === "success" ? (run.output ?? "") : (run.error ?? "Error desconocido"),
+        run_id: run.id,
+        status: run.status,
+        tokens: (run.tokens_input ?? 0) + (run.tokens_output ?? 0),
+      });
+    }
+    setMessages(msgs);
+    const lastWithSession = [...convRuns].reverse().find((r) => r.session_id);
+    if (lastWithSession?.session_id) setLatestSessionId(lastWithSession.session_id);
+  };
+
+  const loadConversations = async () => {
+    const allRuns = await api.runs.list({ agent_id: `knowledge:${id}`, limit: 200 });
+    const groups = new Map<string, Run[]>();
+    for (const run of allRuns) {
+      const convId = (run.input_params as Record<string, string>).conversation_id;
+      if (!convId) continue;
+      if (!groups.has(convId)) groups.set(convId, []);
+      groups.get(convId)!.push(run);
+    }
+    const summaries: ConversationSummary[] = [];
+    for (const [convId, runs] of groups) {
+      const sorted = runs.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      summaries.push({
+        convId,
+        firstMessage: (sorted[0].input_params as Record<string, string>).user_message ?? "",
+        msgCount: sorted.length,
+        lastAt: sorted[sorted.length - 1].created_at,
+      });
+    }
+    summaries.sort((a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime());
+    setConversations(summaries);
+  };
+
+  const initialConv = useRef(searchParams.get("conv"));
+  useEffect(() => {
+    loadAgent();
+    if (initialConv.current) loadConversationHistory(initialConv.current);
+  }, [id]);
+
+  useEffect(() => {
+    if (view === "archivos") loadFiles();
+  }, [view, loadFiles]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, liveLogs]);
+
+  useEffect(() => {
+    return () => { liveEsRef.current?.close(); };
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (toolsMenuRef.current && !toolsMenuRef.current.contains(e.target as Node)) {
+        setShowToolsMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  useEffect(() => {
+    if (pendingScrollLine === null || filePreview || loadingFile || !textareaRef.current || !fileContent) return;
+    const el = textareaRef.current;
+    const lines = fileContent.split("\n");
+    const targetIdx = pendingScrollLine - 1;
+    const charsBefore = lines.slice(0, targetIdx).reduce((acc, l) => acc + l.length + 1, 0);
+    const fraction = Math.min(charsBefore / Math.max(fileContent.length, 1), 1);
+    el.scrollTop = Math.max(0, fraction * el.scrollHeight - el.clientHeight / 3);
+    el.focus();
+    el.setSelectionRange(charsBefore, charsBefore + (lines[targetIdx]?.length ?? 0));
+    setPendingScrollLine(null);
+  }, [fileContent, pendingScrollLine, filePreview, loadingFile]);
+
+  const finalizeRun = async (run_id: string) => {
+    liveEsRef.current?.close();
+    liveEsRef.current = null;
+    let run = await api.runs.get(run_id);
+    while (run.status === "running" || run.status === "pending") {
+      await new Promise((r) => setTimeout(r, 300));
+      run = await api.runs.get(run_id);
+    }
+    if (run.session_id) setLatestSessionId(run.session_id);
+    setLiveLogs([]);
+    setMessages((m) => {
+      const updated = [...m];
+      const last = updated[updated.length - 1];
+      if (last.role === "assistant") {
+        updated[updated.length - 1] = {
+          role: "assistant",
+          content: run.status === "success" ? (run.output ?? "") : (run.error ?? "Error desconocido"),
+          run_id,
+          status: run.status,
+          tokens: (run.tokens_input ?? 0) + (run.tokens_output ?? 0),
+        };
+      }
+      return updated;
+    });
+    setSending(false);
+  };
+
+  const sendMessage = async () => {
+    if (!input.trim() || sending) return;
+    const userMsg = input.trim();
+    setInput("");
+    setSending(true);
+    setLiveLogs([]);
+
+    let convId = conversationId;
+    if (!convId) {
+      convId = generateUUID();
+      setConversation(convId);
+    }
+
+    setMessages((m) => [...m, { role: "user", content: userMsg }]);
+    setMessages((m) => [...m, { role: "assistant", content: "", status: "pending" }]);
+
+    try {
+      const defaultTools = ["Read", "Write"];
+      const toolsOverride =
+        chatTools.length !== defaultTools.length || chatTools.some((t) => !defaultTools.includes(t))
+          ? chatTools
+          : undefined;
+
+      const { run_id } = await api.knowledgeBases.query(id, userMsg, latestSessionId ?? undefined, convId, toolsOverride);
+
+      liveEsRef.current?.close();
+      const es = new EventSource(`${backendUrl}/api/runs/${run_id}/stream`, { withCredentials: true });
+      liveEsRef.current = es;
+      let finalized = false;
+
+      const finish = () => {
+        if (finalized) return;
+        finalized = true;
+        finalizeRun(run_id);
+      };
+
+      es.onmessage = (e: MessageEvent) => {
+        try {
+          const event: LiveLogEvent = JSON.parse(e.data);
+          if (["info", "tool_use", "tool_result", "error"].includes(event.level)) {
+            setLiveLogs((prev) => [...prev, event]);
+          }
+          if (event.level === "done" || event.level === "error") finish();
+        } catch { /* ignore */ }
+      };
+
+      es.addEventListener("done", finish);
+
+      es.onerror = () => {
+        es.close();
+        finish();
+      };
+    } catch (err) {
+      setLiveLogs([]);
+      setMessages((m) => {
+        const updated = [...m];
+        updated[updated.length - 1] = {
+          role: "assistant",
+          content: err instanceof Error ? err.message : "Error al enviar consulta",
+          status: "failed",
+        };
+        return updated;
+      });
+      setSending(false);
+    }
+  };
+
+  const toggleChatTool = (name: string) => {
+    if (name === "Read") return;
+    setChatTools((prev) => prev.includes(name) ? prev.filter((t) => t !== name) : [...prev, name]);
+  };
+
+  const saveConfig = async (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    if (!agent) return;
+    setSavingConfig(true);
+    try {
+      const updated = await api.knowledgeBases.update(id, {
+        name: configForm.name,
+        description: configForm.description,
+        knowledge_path: configForm.knowledge_path,
+        instructions: configForm.instructions,
+      });
+      setAgent(updated);
+      const instr = updated.instructions as Partial<Instructions>;
+      setConfigForm({
+        name: updated.name,
+        description: updated.description,
+        knowledge_path: updated.knowledge_path,
+        instructions: {
+          cite_verbatim: instr.cite_verbatim ?? false,
+          no_recommendations: instr.no_recommendations ?? false,
+          require_source_refs: instr.require_source_refs ?? false,
+          readonly: instr.readonly ?? false,
+          free_text: (instr.free_text as string) ?? "",
+        },
+      });
+      setSavedConfig(true);
+      setTimeout(() => setSavedConfig(false), 2000);
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  const deleteAgent = async () => {
+    if (!confirm(`¿Eliminar "${agent?.name}"? Esta acción no se puede deshacer.`)) return;
+    setDeleting(true);
+    try {
+      await api.knowledgeBases.delete(id);
+      router.push("/knowledge-bases");
+    } catch {
+      setDeleting(false);
+    }
+  };
+
+  const fileDirty = editingContent !== fileContent;
+
+  useEffect(() => {
+    if (!fileDirty) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [fileDirty]);
+
+  if (!agent) return <div className="text-zinc-500 text-sm p-8">Cargando…</div>;
+
+  const agentInstr = agent.instructions as Partial<Instructions>;
+  const configDirty =
+    configForm.name !== agent.name ||
+    configForm.description !== agent.description ||
+    configForm.knowledge_path !== agent.knowledge_path ||
+    INSTRUCTION_FLAGS.some(({ key }) => configForm.instructions[key] !== (agentInstr[key] ?? false)) ||
+    configForm.instructions.free_text !== ((agentInstr.free_text as string) ?? "");
+
+  const defaultTools = ["Read", "Write"];
+  const toolsModified = chatTools.length !== defaultTools.length || chatTools.some((t) => !defaultTools.includes(t));
+
+  return (
+    <div className="flex flex-col h-[calc(100dvh-120px)] gap-4">
+      {/* Header */}
+      <div className="flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3">
+          <Link href="/knowledge-bases" className="text-xs text-zinc-500 hover:text-zinc-400">
+            ← Conocimiento
+          </Link>
+          <span className="text-zinc-800">·</span>
+          <h1 className="text-base font-mono font-semibold text-zinc-200">{agent.name}</h1>
+          {agent.description && (
+            <span className="text-xs text-zinc-600 hidden sm:block">{agent.description}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          {(["chat", "archivos", "conversations", "config"] as View[]).map((v) => (
+            <button
+              key={v}
+              onClick={() => { setView(v); if (v === "conversations") loadConversations(); }}
+              className={`px-2.5 py-1 rounded-md text-xs font-mono transition-colors ${
+                view === v ? "bg-white/[0.08] text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Chat view                                                            */}
+      {/* ------------------------------------------------------------------ */}
+      {view === "chat" && (
+        <>
+          <div className="shrink-0 flex items-center justify-between px-1">
+            {/* Tools popover */}
+            <div className="relative" ref={toolsMenuRef}>
+              <button onClick={() => setShowToolsMenu((v) => !v)} className="flex items-center gap-1.5 group">
+                <span className="text-[11px] font-mono text-zinc-800">tools:</span>
+                <span className="text-[11px] font-mono text-sky-800">Read</span>
+                {(() => {
+                  const extra = chatTools.filter((t) => t !== "Read");
+                  const shown = extra.slice(0, 2);
+                  const rest = extra.length - shown.length;
+                  return (
+                    <>
+                      {shown.map((t) => <span key={t} className="text-[11px] font-mono text-sky-400">{t}</span>)}
+                      {rest > 0 && <span className="text-[11px] font-mono text-zinc-600">+{rest}</span>}
+                    </>
+                  );
+                })()}
+                <span className="text-[11px] font-mono text-zinc-700 group-hover:text-zinc-500 transition-colors">▾</span>
+              </button>
+
+              {showToolsMenu && (
+                <div className="absolute top-full left-0 mt-2 z-50 w-[420px] rounded-xl border border-white/[0.08] bg-zinc-950 shadow-xl p-3 space-y-3">
+                  {KNOWLEDGE_TOOL_GROUPS.map(({ key, label }) => {
+                    const groupTools = KNOWLEDGE_TOOLS.filter((t) => t.group === key);
+                    return (
+                      <div key={key}>
+                        <p className="text-[10px] font-mono uppercase tracking-widest text-zinc-700 mb-1">{label}</p>
+                        <div className="space-y-0.5">
+                          {groupTools.map(({ name, description }) => {
+                            const active = chatTools.includes(name);
+                            const always = name === "Read";
+                            return (
+                              <button
+                                key={name}
+                                onClick={() => toggleChatTool(name)}
+                                disabled={always}
+                                className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-left transition-colors disabled:cursor-default ${
+                                  active ? "hover:bg-sky-400/5" : "hover:bg-white/[0.03]"
+                                }`}
+                              >
+                                <span className={`text-[11px] font-mono w-3 shrink-0 ${active ? "text-sky-400" : "text-zinc-700"}`}>
+                                  {active ? "✓" : "·"}
+                                </span>
+                                <span className={`text-xs font-mono shrink-0 w-24 ${active ? (always ? "text-sky-800" : "text-sky-400") : "text-zinc-600"}`}>
+                                  {name}
+                                </span>
+                                <span className="text-[11px] text-zinc-700 leading-snug">{description}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="pt-3 mt-1 border-t border-white/[0.06]">
+                    <p className="text-[11px] font-mono text-zinc-700 mb-2">cambios solo para esta conversación</p>
+                    {toolsModified && (
+                      <button
+                        onClick={() => setChatTools(["Read", "Write"])}
+                        className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors"
+                      >
+                        ↺ restaurar defecto
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              {conversationId && (
+                <span className="text-[11px] font-mono text-zinc-800">conv {conversationId.slice(0, 8)}…</span>
+              )}
+              <button
+                onClick={() => { setMessages([]); setLatestSessionId(null); setConversation(null); }}
+                disabled={sending}
+                className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors disabled:opacity-30"
+              >
+                nueva conversación ↺
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] p-4 space-y-4">
+            {messages.length === 0 && (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-xs font-mono text-zinc-700">
+                  {conversationId
+                    ? `Retomando conversación ${conversationId.slice(0, 8)}… — escribe para continuar`
+                    : `Consulta a ${agent.name} — responderá con el contexto de su base de conocimiento`}
+                </p>
+              </div>
+            )}
+            {messages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-[80%] rounded-xl px-4 py-3 text-sm ${
+                  msg.role === "user"
+                    ? "bg-amber-400/10 border border-amber-400/15 text-zinc-200"
+                    : "bg-white/[0.03] border border-white/[0.06] text-zinc-300"
+                }`}>
+                  {msg.status === "pending" || (msg.status === "running" && !msg.content) ? (
+                    <div className="space-y-1.5">
+                      {liveLogs.length === 0 ? (
+                        <span className="text-xs font-mono text-zinc-600 animate-pulse">procesando···</span>
+                      ) : (
+                        <div className="space-y-1 max-h-52 overflow-y-auto pr-1">
+                          {liveLogs.map((log, li) => (
+                            <div key={li} className={`text-[11px] font-mono leading-relaxed ${
+                              log.level === "info" ? "text-zinc-500" :
+                              log.level === "tool_use" ? "text-yellow-400/80" :
+                              log.level === "tool_result" ? "text-cyan-400/80" :
+                              "text-red-400"
+                            }`}>
+                              {log.level === "tool_use" && log.metadata ? (
+                                <span>
+                                  <span className="text-zinc-600 mr-1">→</span>
+                                  <span className="text-yellow-300/80">{String(log.metadata.tool)}</span>
+                                  <span className="text-zinc-600 mx-1 text-[10px]">{JSON.stringify(log.metadata.input).slice(0, 100)}</span>
+                                </span>
+                              ) : log.level === "tool_result" ? (
+                                <span>
+                                  <span className="text-zinc-600 mr-1">←</span>
+                                  <span className="line-clamp-1">{log.message}</span>
+                                </span>
+                              ) : (
+                                <span className="line-clamp-3 whitespace-pre-wrap">{log.message}</span>
+                              )}
+                            </div>
+                          ))}
+                          <span className="text-[11px] font-mono text-zinc-700 animate-pulse block">···</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      {rawMessages.has(i) ? (
+                        <pre className="whitespace-pre-wrap text-sm font-mono leading-relaxed text-zinc-300">{msg.content}</pre>
+                      ) : (
+                        <InfoMessage message={msg.content} />
+                      )}
+                      <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/[0.04] text-[11px] font-mono text-zinc-700">
+                        {msg.role === "assistant" && msg.status && <span className={STATUS_TEXT[msg.status]}>{msg.status}</span>}
+                        {msg.role === "assistant" && msg.tokens != null && msg.tokens > 0 && <span>{fmtTokens(msg.tokens)} tokens</span>}
+                        {msg.role === "assistant" && msg.run_id && (
+                          <Link href={`/runs/${msg.run_id}`} className="hover:text-zinc-500 transition-colors">
+                            ver run →
+                          </Link>
+                        )}
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(msg.content).then(() => {
+                              setCopiedMsg(i);
+                              setTimeout(() => setCopiedMsg((c) => c === i ? null : c), 2000);
+                            });
+                          }}
+                          className="ml-auto flex items-center gap-1.5 transition-colors hover:text-zinc-500"
+                        >
+                          {copiedMsg === i ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          {copiedMsg === i ? "copiado" : "copiar"}
+                        </button>
+                        <button
+                          onClick={() => setRawMessages((prev) => {
+                            const next = new Set(prev);
+                            next.has(i) ? next.delete(i) : next.add(i);
+                            return next;
+                          })}
+                          className={`flex items-center gap-1 transition-colors ${rawMessages.has(i) ? "text-amber-400" : "hover:text-zinc-500"}`}
+                        >
+                          <Code className="w-3 h-3" />
+                          raw
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+            <div ref={bottomRef} />
+          </div>
+
+          <div className="shrink-0 flex gap-2">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              placeholder="Escribe tu consulta… (Enter para enviar, Shift+Enter para nueva línea)"
+              rows={2}
+              disabled={sending}
+              className="flex-1 bg-zinc-900 border border-white/[0.06] rounded-xl px-4 py-3 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-amber-400/20 resize-none font-mono disabled:opacity-50"
+            />
+            <button
+              onClick={sendMessage}
+              disabled={sending || !input.trim()}
+              className="px-4 self-end py-3 rounded-xl border border-amber-400/20 text-amber-400 hover:text-amber-300 hover:border-amber-400/40 text-xs font-mono transition-all disabled:opacity-30"
+            >
+              {sending ? "···" : "→"}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Archivos view                                                        */}
+      {/* ------------------------------------------------------------------ */}
+      {view === "archivos" && (
+        <>
+          {/* Hidden file inputs */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => e.target.files && handleUpload(e.target.files)}
+          />
+          <input
+            ref={folderInputRef}
+            type="file"
+            // @ts-expect-error webkitdirectory is not in the standard types
+            webkitdirectory=""
+            multiple
+            className="hidden"
+            onChange={(e) => e.target.files && handleUpload(e.target.files)}
+          />
+
+          <div
+            className={`flex-1 min-h-0 flex gap-3 transition-colors rounded-xl ${dragOver ? "ring-1 ring-amber-400/30 bg-amber-400/[0.02]" : ""}`}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+          >
+            {/* Left panel — file tree */}
+            <div className="w-56 shrink-0 flex flex-col gap-2 min-h-0">
+              {/* Upload controls */}
+              <div className="shrink-0 flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors disabled:opacity-30"
+                >
+                  + ficheros
+                </button>
+                <button
+                  onClick={() => folderInputRef.current?.click()}
+                  disabled={uploading}
+                  className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors disabled:opacity-30"
+                >
+                  + carpeta
+                </button>
+                <button
+                  onClick={() => setShowNewFile((v) => !v)}
+                  className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors"
+                >
+                  + nuevo
+                </button>
+                {uploading && <span className="text-[11px] font-mono text-zinc-600 animate-pulse">subiendo…</span>}
+              </div>
+
+              {/* Upload result */}
+              {uploadResult && (
+                <div className="shrink-0 text-[11px] font-mono space-y-0.5">
+                  {uploadResult.written.length > 0 && (
+                    <p className="text-emerald-500">{uploadResult.written.length} subidos</p>
+                  )}
+                  {uploadResult.errors.length > 0 && (
+                    <p className="text-red-400">{uploadResult.errors.length} errores</p>
+                  )}
+                  <button onClick={() => setUploadResult(null)} className="text-zinc-700 hover:text-zinc-500 transition-colors">
+                    ✕ cerrar
+                  </button>
+                </div>
+              )}
+
+              {/* New file form */}
+              {showNewFile && (
+                <div className="shrink-0 flex gap-1">
+                  <input
+                    value={newFilePath}
+                    onChange={(e) => setNewFilePath(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") createFile(); if (e.key === "Escape") setShowNewFile(false); }}
+                    placeholder="ruta/fichero.md"
+                    autoFocus
+                    className="flex-1 min-w-0 bg-zinc-900 border border-white/[0.06] rounded px-2 py-1 text-[11px] font-mono text-zinc-300 placeholder-zinc-700 focus:outline-none focus:border-amber-400/20"
+                  />
+                  <button onClick={createFile} className="text-[11px] font-mono text-amber-400 px-1.5 hover:text-amber-300">→</button>
+                </div>
+              )}
+
+              {/* Content search */}
+              <div className="shrink-0">
+                <input
+                  value={searchResults !== null ? contentSearchQuery : fileSearch}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v.startsWith("/")) {
+                      triggerContentSearch(v.slice(1));
+                    } else {
+                      clearSearch();
+                      setFileSearch(v);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && fileSearch) triggerContentSearch(fileSearch);
+                    if (e.key === "Escape") clearSearch();
+                  }}
+                  placeholder="filtrar · /buscar contenido"
+                  className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-2 py-1.5 text-[11px] font-mono text-zinc-400 placeholder-zinc-700 focus:outline-none focus:border-amber-400/20"
+                />
+              </div>
+
+              {/* File tree */}
+              <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] py-1.5">
+                {loadingFiles ? (
+                  <div className="px-2 py-4 text-center">
+                    <p className="text-[11px] font-mono text-zinc-700 animate-pulse">cargando…</p>
+                  </div>
+                ) : files.length === 0 ? (
+                  <div className="px-2 py-4 text-center space-y-1">
+                    <p className="text-[11px] font-mono text-zinc-700">sin ficheros</p>
+                    <p className="text-[10px] text-zinc-800">arrastra aquí o usa ↑</p>
+                  </div>
+                ) : (
+                  <FileTree
+                    files={files}
+                    selected={selectedFile}
+                    onSelect={selectFile}
+                    collapsed={collapsedDirs}
+                    onToggle={(path) => setCollapsedDirs((prev) => {
+                      const next = new Set(prev);
+                      next.has(path) ? next.delete(path) : next.add(path);
+                      return next;
+                    })}
+                    search={fileSearch}
+                  />
+                )}
+              </div>
+
+              <button
+                onClick={loadFiles}
+                className="shrink-0 text-[11px] font-mono text-zinc-700 hover:text-zinc-500 transition-colors text-left"
+              >
+                ↺ actualizar
+              </button>
+            </div>
+
+            {/* Editor / search results panel */}
+            <div className="flex-1 min-w-0 flex flex-col gap-2 min-h-0">
+              {searchResults !== null ? (() => {
+                const { terms, phrases, caseSensitive } = parseSearchTerms(contentSearchQuery);
+                const totalMatches = searchResults.reduce((s, r) => s + r.matches.length, 0);
+                return (
+                  <>
+                    <div className="flex items-center justify-between shrink-0 px-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {searching ? (
+                          <span className="text-[11px] font-mono text-zinc-500 animate-pulse">buscando···</span>
+                        ) : (
+                          <>
+                            <span className="text-[11px] font-mono text-zinc-400">
+                              <span className="text-amber-400/70">"{contentSearchQuery}"</span>
+                            </span>
+                            <span className="text-[11px] font-mono text-zinc-600">
+                              {searchResults.length} fichero{searchResults.length !== 1 ? "s" : ""} · {totalMatches} coincidencia{totalMatches !== 1 ? "s" : ""}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <button
+                        onClick={clearSearch}
+                        className="text-[11px] font-mono text-zinc-700 hover:text-zinc-400 transition-colors shrink-0 ml-2"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-0.5">
+                      {!searching && searchResults.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-40 gap-2">
+                          <p className="text-xs font-mono text-zinc-700">sin resultados para "{contentSearchQuery}"</p>
+                          <p className="text-[11px] font-mono text-zinc-800">
+                            Prueba con menos palabras o usa comillas para frases exactas
+                          </p>
+                        </div>
+                      )}
+                      {searchResults.map((result) => {
+                        const dirPart = result.file.includes("/")
+                          ? result.file.slice(0, result.file.lastIndexOf("/") + 1)
+                          : "";
+                        const namePart = result.file.includes("/")
+                          ? result.file.slice(result.file.lastIndexOf("/") + 1)
+                          : result.file;
+                        return (
+                          <div key={result.file} className="rounded-xl border border-white/[0.05] overflow-hidden bg-zinc-900/30">
+                            <button
+                              onClick={() => { selectFile(result.file); clearSearch(); }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.03] transition-colors group"
+                            >
+                              <span className="text-[11px] font-mono min-w-0 truncate flex-1">
+                                {dirPart && <span className="text-zinc-600">{dirPart}</span>}
+                                <span className="text-amber-300/80 font-medium">{namePart}</span>
+                              </span>
+                              <span className="text-[10px] font-mono text-zinc-700 shrink-0 tabular-nums">
+                                {result.matches.length} match{result.matches.length !== 1 ? "es" : ""}
+                              </span>
+                              <span className="text-[10px] font-mono text-zinc-800 group-hover:text-zinc-500 transition-colors shrink-0">→</span>
+                            </button>
+
+                            {result.matches.length > 0 && (
+                              <div className="border-t border-white/[0.04]">
+                                {result.matches.map((match, mi) => (
+                                  <button
+                                    key={match.line_number}
+                                    onClick={() => { selectFile(result.file, match.line_number); clearSearch(); }}
+                                    className={`w-full text-left font-mono text-[11px] leading-relaxed hover:bg-white/[0.02] transition-colors group/match ${mi > 0 ? "border-t border-white/[0.04]" : ""}`}
+                                    title={`Abrir en línea ${match.line_number}`}
+                                  >
+                                    {match.context_before.map((l, i) => (
+                                      <div key={`b${i}`} className="flex items-start gap-0">
+                                        <span className="text-zinc-800 w-10 text-right shrink-0 px-2 py-0.5 select-none tabular-nums">
+                                          {match.line_number - match.context_before.length + i}
+                                        </span>
+                                        <span className="text-zinc-700 py-0.5 pr-3 whitespace-pre-wrap break-all">{l || " "}</span>
+                                      </div>
+                                    ))}
+                                    <div className="flex items-start gap-0 bg-amber-400/[0.04] border-l-2 border-amber-400/40">
+                                      <span className="text-zinc-500 w-10 text-right shrink-0 px-2 py-0.5 select-none tabular-nums">
+                                        {match.line_number}
+                                      </span>
+                                      <span className="text-zinc-200 py-0.5 pr-3 whitespace-pre-wrap break-all flex-1 min-w-0">
+                                        <HighlightedLine
+                                          text={match.line}
+                                          terms={terms}
+                                          phrases={phrases}
+                                          caseSensitive={caseSensitive}
+                                        />
+                                      </span>
+                                      <span className="text-[10px] text-zinc-800 group-hover/match:text-zinc-500 transition-colors shrink-0 px-2 py-0.5 self-center">→</span>
+                                    </div>
+                                    {match.context_after.map((l, i) => (
+                                      <div key={`a${i}`} className="flex items-start gap-0">
+                                        <span className="text-zinc-800 w-10 text-right shrink-0 px-2 py-0.5 select-none tabular-nums">
+                                          {match.line_number + i + 1}
+                                        </span>
+                                        <span className="text-zinc-700 py-0.5 pr-3 whitespace-pre-wrap break-all">{l || " "}</span>
+                                      </div>
+                                    ))}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })() : selectedFile ? (
+                <>
+                  <div className="flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[11px] font-mono text-zinc-500 truncate">{selectedFile}</span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(fileContent);
+                          setCopiedFile(true);
+                          setTimeout(() => setCopiedFile(false), 2000);
+                        }}
+                        className="shrink-0 text-zinc-700 hover:text-zinc-400 transition-colors"
+                        title="Copiar contenido"
+                      >
+                        {copiedFile ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {(fileExt(selectedFile) === "md" || fileHighlightLang(selectedFile)) && (
+                        filePreview ? (
+                          <>
+                            <button
+                              onClick={() => setFilePreview(false)}
+                              title="Editar"
+                              className="transition-colors"
+                            >
+                              <Pencil className="w-3.5 h-3.5 text-zinc-600 hover:text-zinc-300" />
+                            </button>
+                            {fileDirty && (
+                              <button
+                                onClick={saveFile}
+                                disabled={savingFile}
+                                title="Guardar"
+                                className="transition-colors disabled:opacity-30"
+                              >
+                                <Save className="w-3.5 h-3.5 text-amber-400 hover:text-amber-300" />
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => setFilePreview(true)}
+                              title="Volver al preview"
+                              className="transition-colors"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-zinc-600 hover:text-zinc-300" />
+                            </button>
+                            {fileDirty && (
+                              <button
+                                onClick={() => { setEditingContent(fileContent); setFilePreview(true); }}
+                                title="Descartar cambios"
+                                className="transition-colors"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5 text-amber-400 hover:text-amber-300" />
+                              </button>
+                            )}
+                            <button
+                              onClick={async () => { await saveFile(); setFilePreview(true); }}
+                              disabled={savingFile}
+                              title="Guardar"
+                              className="transition-colors disabled:opacity-30"
+                            >
+                              <Save className={`w-3.5 h-3.5 ${fileDirty ? "text-amber-400 hover:text-amber-300" : "text-zinc-600 hover:text-zinc-300"}`} />
+                            </button>
+                          </>
+                        )
+                      )}
+                      <button
+                        onClick={deleteFile}
+                        disabled={deletingFile}
+                        title="Eliminar"
+                        className="transition-colors disabled:opacity-30"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-zinc-700 hover:text-red-400" />
+                      </button>
+                    </div>
+                  </div>
+                  {loadingFile ? (
+                    <div className="flex-1 flex items-center justify-center">
+                      <span className="text-xs font-mono text-zinc-600 animate-pulse">cargando…</span>
+                    </div>
+                  ) : filePreview && fileExt(selectedFile) === "md" ? (
+                    <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] px-4 py-4 text-zinc-300">
+                      <InfoMessage message={editingContent} />
+                    </div>
+                  ) : filePreview && fileHighlightLang(selectedFile) ? (
+                    <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] bg-zinc-900">
+                      <pre className="px-4 py-4 text-sm leading-relaxed overflow-x-auto">
+                        <code dangerouslySetInnerHTML={{ __html: hljs.highlight(editingContent, { language: fileHighlightLang(selectedFile)! }).value }} />
+                      </pre>
+                    </div>
+                  ) : (
+                    <textarea
+                      ref={textareaRef}
+                      value={editingContent}
+                      onChange={(e) => setEditingContent(e.target.value)}
+                      className="flex-1 min-h-0 bg-zinc-900 border border-white/[0.06] rounded-xl px-4 py-4 text-sm text-zinc-300 font-mono leading-relaxed focus:outline-none focus:border-amber-400/20 resize-none"
+                    />
+                  )}
+                </>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center gap-3">
+                  {dragOver ? (
+                    <p className="text-xs font-mono text-amber-400/70">suelta para subir</p>
+                  ) : (
+                    <>
+                      <p className="text-xs font-mono text-zinc-700">selecciona un fichero para editarlo</p>
+                      <p className="text-[11px] font-mono text-zinc-800">o arrastra ficheros / carpetas / zip aquí</p>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Conversations view                                                   */}
+      {/* ------------------------------------------------------------------ */}
+      {view === "conversations" && (
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-1">
+          {conversations.length === 0 ? (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-xs font-mono text-zinc-700">sin conversaciones anteriores</p>
+            </div>
+          ) : (
+            conversations.map((conv) => (
+              <div key={conv.convId} className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-white/[0.04] hover:border-white/[0.08] hover:bg-white/[0.02] transition-colors group">
+                <div className="min-w-0">
+                  <p className="text-sm text-zinc-300 truncate">{conv.firstMessage}</p>
+                  <p className="text-[11px] font-mono text-zinc-700 mt-0.5">
+                    conv {conv.convId.slice(0, 8)}… · {conv.msgCount} {conv.msgCount === 1 ? "mensaje" : "mensajes"} · {asUTC(conv.lastAt).toLocaleDateString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setMessages([]); setLatestSessionId(null); setConversation(conv.convId); loadConversationHistory(conv.convId); setView("chat"); }}
+                  className="text-xs font-mono text-zinc-600 hover:text-amber-400 transition-colors shrink-0"
+                >
+                  retomar →
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Config view                                                          */}
+      {/* ------------------------------------------------------------------ */}
+      {view === "config" && (
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <form onSubmit={saveConfig} className="flex flex-col gap-5 max-w-2xl">
+            <div className="space-y-5">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Nombre</label>
+                <input
+                  value={configForm.name}
+                  onChange={(e) => setConfigForm((f) => ({ ...f, name: e.target.value }))}
+                  required
+                  className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Descripción</label>
+                <input
+                  value={configForm.description}
+                  onChange={(e) => setConfigForm((f) => ({ ...f, description: e.target.value }))}
+                  className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Ruta de conocimiento</label>
+                <input
+                  value={configForm.knowledge_path}
+                  onChange={(e) => setConfigForm((f) => ({ ...f, knowledge_path: e.target.value }))}
+                  className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-zinc-200 font-mono placeholder-zinc-700 focus:outline-none focus:border-amber-400/30"
+                />
+                <p className="text-[11px] text-zinc-700">
+                  Ruta dentro del contenedor. Cambia solo si quieres apuntar a un volumen externo.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Instrucciones</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {INSTRUCTION_FLAGS.map(({ key, label }) => {
+                    const active = configForm.instructions[key];
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setConfigForm((f) => ({ ...f, instructions: { ...f.instructions, [key]: !f.instructions[key] } }))}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left transition-colors ${
+                          active ? "border-teal-400/20 bg-teal-400/5" : "border-white/[0.04] hover:border-white/[0.08]"
+                        }`}
+                      >
+                        <span className={`text-xs font-mono shrink-0 w-4 ${active ? "text-teal-400" : "text-zinc-700"}`}>
+                          {active ? "✓" : "·"}
+                        </span>
+                        <span className={`text-xs font-mono ${active ? "text-teal-400" : "text-zinc-600"}`}>{label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="space-y-1.5 pt-1">
+                  <label className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">Instrucciones libres</label>
+                  <textarea
+                    value={configForm.instructions.free_text}
+                    onChange={(e) => setConfigForm((f) => ({ ...f, instructions: { ...f.instructions, free_text: e.target.value } }))}
+                    placeholder="Instrucciones adicionales para el agente…"
+                    rows={4}
+                    className="w-full bg-zinc-900 border border-white/[0.06] rounded-lg px-3 py-2.5 text-sm text-zinc-300 font-mono leading-relaxed placeholder-zinc-800 focus:outline-none focus:border-amber-400/30 resize-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="button"
+                onClick={deleteAgent}
+                disabled={deleting}
+                className="text-xs font-mono text-red-500/60 hover:text-red-400 transition-colors disabled:opacity-30"
+              >
+                {deleting ? "eliminando···" : "eliminar base"}
+              </button>
+              <button
+                type="submit"
+                disabled={savingConfig || !configDirty}
+                className="text-xs font-mono px-4 py-1.5 border rounded-md transition-all disabled:opacity-40 disabled:cursor-default text-amber-400 hover:text-amber-300 border-amber-400/20 hover:border-amber-400/40 enabled:hover:border-amber-400/40"
+              >
+                {savingConfig ? "guardando···" : savedConfig ? "guardado ✓" : "guardar cambios →"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
