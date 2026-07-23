@@ -80,8 +80,8 @@ export function AgentChatPanel({
   }, [agentId]);
 
   useEffect(() => {
-    if (conversationId) loadConversationHistory(conversationId);
-  }, [conversationId, loadConversationHistory]);
+    if (conversationId && !sending) loadConversationHistory(conversationId);
+  }, [conversationId, loadConversationHistory, sending]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
