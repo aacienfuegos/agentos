@@ -45,10 +45,10 @@ class ClaudeCodeRunner:
             "--dangerously-skip-permissions",
         ]
 
-        if resume_session_id:
+        if resume_session_id and self._session_exists(resume_session_id, cwd):
             cmd.extend(["--resume", resume_session_id])
         else:
-            # Solo inyectar system prompt al iniciar sesión nueva, no al reanudar
+            # New session: inject system prompt and handle persistence
             if agent.system_prompt:
                 cmd.extend(["--system-prompt", agent.system_prompt])
             if not persist_session:
@@ -179,6 +179,14 @@ class ClaudeCodeRunner:
                     extra=metadata,
                 ))
                 session.commit()
+
+    @staticmethod
+    def _session_exists(session_id: str, cwd: str | None = None) -> bool:
+        effective_cwd = cwd or os.getcwd()
+        cwd_hash = effective_cwd.replace("/", "-")
+        home = os.path.expanduser("~")
+        session_path = os.path.join(home, ".claude", "projects", cwd_hash, f"{session_id}.jsonl")
+        return os.path.isfile(session_path)
 
     def _build_user_message(self, input_params: dict, agent_id: str = "") -> str:
         from ..agents.portfolio_updater import build_portfolio_message
