@@ -155,7 +155,11 @@ class KnowledgeRunner:
         resume_session_id: str | None = run.input_params.get("resume_session_id")
         system_prompt = _build_system_prompt(kb) if not resume_session_id else ""
 
-        tools = run.input_params.get("tools") or ["Read", "Write"]
+        readonly = (kb.instructions or {}).get("readonly", False)
+        if readonly:
+            tools = ["Read", "Grep", "LS", "Glob"]
+        else:
+            tools = run.input_params.get("tools") or ["Read", "Write"]
         proxy_agent = AgentDefinition(
             id=f"knowledge:{kb.id}",
             name=kb.name,

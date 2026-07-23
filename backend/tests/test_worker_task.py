@@ -27,7 +27,7 @@ import agentos.runner.claude_code as _runner_module
 _tasks_module.engine = _ENGINE
 _runner_module.engine = _ENGINE
 
-from agentos.models import AgentDefinition, Run, RunStatus
+from agentos.models import AgentDefinition, KnowledgeBase, Run, RunStatus
 from agentos.runner.claude_code import RunResult
 from agentos.worker.tasks import run_agent_task
 
@@ -110,6 +110,56 @@ async def test_run_agent_task_agent_not_found(db_session):
 async def test_run_agent_task_run_not_found(db_session):
     # Should silently return without error
     await run_agent_task({}, "nonexistent-run-id")
+
+
+@pytest.mark.asyncio
+async def test_run_agent_task_kb_context_injected(db_session, tmp_path):
+    """Agent with knowledge_base_id gets KB context prepended using mode='context'."""
+    kb = KnowledgeBase(
+        id="homelab",
+        name="Homelab",
+        description="Infra docs",
+        knowledge_path=str(tmp_path),
+    )
+    db_session.add(kb)
+
+    agent = AgentDefinition(
+        id="advisor",
+        name="Homelab Advisor",
+        description="desc",
+        system_prompt="Eres un asesor de servicios.",
+        tools=[],
+        model="claude-sonnet-4-6",
+        timeout_seconds=30,
+        knowledge_base_id="homelab",
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    run = Run(agent_id="advisor", input_params={"user_message": "hola"})
+    db_session.add(run)
+    db_session.commit()
+    run_id = run.id
+
+    captured: dict = {}
+
+    async def _fake_run(self, run, agent_def, **kwargs):
+        captured["system_prompt"] = agent_def.system_prompt
+        captured["cwd"] = kwargs.get("cwd")
+        return RunResult(output="ok", tokens_input=1, tokens_output=1)
+
+    with (
+        patch.object(_tasks_module.ClaudeCodeRunner, "run", new=_fake_run),
+        patch("agentos.worker.tasks.send_notification", new=AsyncMock()),
+    ):
+        await run_agent_task({}, run_id)
+
+    prompt = captured["system_prompt"]
+    assert "Eres un asesor de servicios." in prompt
+    assert "## Base de conocimiento: Homelab" in prompt
+    assert "asistente especializado" not in prompt
+    assert "---" in prompt
+    assert captured["cwd"] == str(tmp_path)
 
 
 @pytest.mark.asyncio

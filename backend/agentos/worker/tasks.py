@@ -89,15 +89,9 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
         if not resume_session_id and agent.knowledge_base_id:
             kb = session.get(KnowledgeBase, agent.knowledge_base_id)
             if kb:
-                from ..runner.knowledge import ensure_knowledge_dir
+                from ..runner.knowledge import _build_system_prompt, ensure_knowledge_dir
                 ensure_knowledge_dir(kb)
-                knowledge_ctx = (
-                    f"## Base de conocimiento: {kb.name}\n\n"
-                    f"{kb.description}\n\n"
-                    f"Directorio: `{kb.knowledge_path}`\n\n"
-                    f"Lee `{kb.knowledge_path}/knowledge.md` primero para orientarte. "
-                    f"Usa Read, LS y Grep para explorar el resto de ficheros según necesites."
-                )
+                knowledge_ctx = _build_system_prompt(kb, mode="context")
                 agent.system_prompt = knowledge_ctx + "\n\n---\n\n" + agent.system_prompt
                 ka_cwd = kb.knowledge_path
                 session.expunge(kb)

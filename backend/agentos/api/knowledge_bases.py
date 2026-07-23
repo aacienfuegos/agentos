@@ -460,7 +460,7 @@ async def query_knowledge_base(
         raise HTTPException(404, "Knowledge base not found")
 
     input_params: dict[str, Any] = {
-        "knowledge_agent_id": kb_id,
+        "knowledge_base_id": kb_id,
         "user_message": data.user_message,
     }
     if data.resume_session_id:
