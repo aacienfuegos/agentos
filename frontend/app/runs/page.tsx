@@ -63,9 +63,7 @@ function dur(run: Run): string {
 }
 
 function canExpand(run: Run): boolean {
-  return run.status === "success" &&
-    !run.agent_id.startsWith("knowledge:") &&
-    run.agent_id !== "__execute__";
+  return run.status === "success" && run.agent_id !== "__execute__";
 }
 
 export default function RunsList() {
