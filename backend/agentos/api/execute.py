@@ -118,6 +118,7 @@ def _create_run(session: Session, req: ExecuteRequest, api_key_name: str | None 
     run = Run(
         agent_id=EXECUTE_AGENT_ID,
         triggered_by="api",
+        run_type="execute",
         input_params=input_params,
         status=RunStatus.pending,
     )

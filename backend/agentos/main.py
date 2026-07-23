@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 
 from .config import settings
 from .database import create_db_and_tables, engine
-from .api import agents, runs, schedules, stream, stats, webhooks, auth, knowledge_agents
+from .api import agents, runs, schedules, stream, stats, webhooks, auth, knowledge_bases
 from .api import api_keys, execute, harness
 from .api.auth import verify_token
 from .models import ApiKey
@@ -105,7 +105,7 @@ app.include_router(schedules.router, prefix="/api/schedules", tags=["schedules"]
 app.include_router(stream.router, prefix="/api/runs", tags=["stream"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["webhooks"])
-app.include_router(knowledge_agents.router, prefix="/api/knowledge-agents", tags=["knowledge-agents"])
+app.include_router(knowledge_bases.router, prefix="/api/knowledge-bases", tags=["knowledge-bases"])
 app.include_router(api_keys.router, prefix="/api/api-keys", tags=["api-keys"])
 app.include_router(execute.router, prefix="/api/execute", tags=["execute"])
 app.include_router(harness.router, prefix="/api/harness", tags=["harness"])

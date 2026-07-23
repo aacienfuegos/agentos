@@ -176,25 +176,25 @@ en `log_entries`. Tokens y coste se extraen del evento `result` final.
 
 ## Estado actual del desarrollo
 
-**Última sesión activa:** 2026-06-27 — limpieza de configuración Claude Code: harness centralizado en `~/.claude/`, skills del proyecto commiteadas (`api-design`, `fastapi-arq`, `python-testing`), `settings.json` vaciado de permisos duplicados
+**Última sesión activa:** 2026-07-23 — roadmap ampliado con dos fases nuevas (`phase:usage-limits` #214–217, `phase:projects` #218–220) tras revisar `NOTES.md` (borrado una vez capturado en #220). En paralelo, otro agente trabaja en local sobre `feat/run-type-separation-213` (separar `run_type` de `triggered_by`), sin mergear todavía.
 
 ### PRs abiertas
 
-Solo PRs de Dependabot (#148–151): `@types/node`, `lucide-react`, `@base-ui/react`, `actions/checkout`. Sin PRs de feature pendientes.
+`#213` `feat(runs): separar run_type de triggered_by` → `develop` (en desarrollo activo, sin terminar).
 
 ### Issues ya implementados
 
-Cerrados y en producción (main): phase:core, phase:scheduler, phase:knowledge-1, phase:external-api (#117–#120) — todos los issues cerrados. phase:polish parcialmente: #20 (Caddy + Tailscale) sigue abierto. Ver historial completo en GitHub.
+Cerrados y en producción (main): phase:core, phase:scheduler, phase:knowledge-1, phase:external-api (#117–#120), harness CRUD + AI generation (#190), agentes CRUD + tool selector (#191/#192), polish de LogStream (#160–165, #66, #193), explorador de ficheros del Knowledge Agent — colapso y botones (#195, #198), BM25 full-text search (#199), migraciones Alembic + entrypoint automático (#204, #205, #207), chat sobre runs de agentes (#206, #209), agrupación de runs de knowledge chat (#210), orden de hijos por antigüedad (#211). phase:polish parcialmente: #20 (Caddy + Tailscale) sigue abierto. Ver historial completo en GitHub.
 
 ### Fases pendientes del roadmap
 
 | Fase | Issues | Descripción |
 |------|--------|-------------|
 | phase:polish | #20 | Caddy + Tailscale para acceso seguro en producción |
-| phase:knowledge-2 | #33, #34, #36 | Knowledge Agent: system prompt auto-generado, automatizaciones |
+| phase:knowledge-2 | #33, #34, #36, #223 | Knowledge Agent: system prompt auto-generado, automatizaciones, preview del system prompt |
 | phase:multimodel | #37–#45 | ⚠️ NEEDS-ANALYSIS — issues originales asumían runners OpenAI/Gemini (incompatible con restricción Claude Pro). Pendiente de redefinición: multi-modelo dentro de Claude (sonnet/haiku/opus vía `--model`) u otro enfoque. |
-| phase:scrum-master | pendiente | Agente scrum master: propaga cambios de workflow/CLAUDE.md a todos los repos de dev + scaffolding de proyectos nuevos |
-| phase:arquitecto | pendiente | Agente arquitecto: ingiere ~/docu/homelab como base de conocimiento, asesora y ejecuta despliegues (software de terceros y proyectos propios como tripplanner) |
+| phase:usage-limits | #214–#217 | Visión y gestión de límites de uso Claude Pro: origen de % sesión (5h) y semanal (#214, spike), persistencia por run (#215), gauges en frontend + % contexto por conversación (#216), pausa de cola y auto-reanudación al resetear el límite (#217) |
+| phase:projects | #218–#220 | "Proyectos": chat y ejecución de agentes sobre repos de desarrollo, extensión de KnowledgeAgent (#218). #219 formaliza como needs-analysis independiente el diseño de agentes de infraestructura multi-repo (scrum-master/arquitecto/deployer) que antes vivía como placeholder en este roadmap. #220 es la duda sobre slash commands explícitos en el chat, capturada desde `NOTES.md`. |
 | phase:multi-tenant | pendiente | Multi-usuario: tabla de usuarios, API keys cifradas por usuario (Anthropic/GitHub), runner usa key del usuario en lugar de la global. Anthropic no tiene OAuth — el usuario pega su `sk-ant-...` en Settings. |
 
 ### Notas de arquitectura (phase:knowledge-1)

@@ -7,7 +7,7 @@ from sqlmodel import Session
 
 from ..config import settings
 from ..database import engine
-from ..models import Run, RunStatus, AgentDefinition, KnowledgeAgent
+from ..models import Run, RunStatus, AgentDefinition, KnowledgeBase
 from ..runner.claude_code import ClaudeCodeRunner
 from ..runner.knowledge import KnowledgeRunner
 from ..tools.notifications import send_notification
@@ -51,11 +51,11 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
 
         # Route to KnowledgeRunner if agent_id starts with "knowledge:"
         if run.agent_id.startswith(_KNOWLEDGE_PREFIX):
-            ka_id = run.agent_id[len(_KNOWLEDGE_PREFIX):]
-            ka = session.get(KnowledgeAgent, ka_id)
-            if not ka:
+            kb_id = run.agent_id[len(_KNOWLEDGE_PREFIX):]
+            kb = session.get(KnowledgeBase, kb_id)
+            if not kb:
                 run.status = RunStatus.failed
-                run.error = f"Knowledge agent '{ka_id}' not found"
+                run.error = f"Knowledge base '{kb_id}' not found"
                 session.add(run)
                 session.commit()
                 return
@@ -64,8 +64,8 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
             session.add(run)
             session.commit()
             session.expunge(run)
-            session.expunge(ka)
-            await _run_knowledge(run, ka)
+            session.expunge(kb)
+            await _run_knowledge(run, kb)
             return
 
         agent = session.get(AgentDefinition, run.agent_id)
@@ -81,23 +81,20 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
         session.add(run)
         session.commit()
 
-        # Inject knowledge agent context if configured
+        resume_session_id: str | None = run.input_params.get("resume_session_id")
+        initial_context: str | None = run.input_params.get("initial_context")
+
+        # Inject knowledge base context if configured and not resuming a session
         ka_cwd: str | None = None
-        if agent.knowledge_agent_id:
-            ka = session.get(KnowledgeAgent, agent.knowledge_agent_id)
-            if ka:
-                from ..runner.knowledge import ensure_knowledge_dir
-                ensure_knowledge_dir(ka)
-                knowledge_ctx = (
-                    f"## Base de conocimiento: {ka.name}\n\n"
-                    f"{ka.description}\n\n"
-                    f"Directorio: `{ka.knowledge_path}`\n\n"
-                    f"Lee `{ka.knowledge_path}/knowledge.md` primero para orientarte. "
-                    f"Usa Read, LS y Grep para explorar el resto de ficheros según necesites."
-                )
+        if not resume_session_id and agent.knowledge_base_id:
+            kb = session.get(KnowledgeBase, agent.knowledge_base_id)
+            if kb:
+                from ..runner.knowledge import _build_system_prompt, ensure_knowledge_dir
+                ensure_knowledge_dir(kb)
+                knowledge_ctx = _build_system_prompt(kb, mode="context")
                 agent.system_prompt = knowledge_ctx + "\n\n---\n\n" + agent.system_prompt
-                ka_cwd = ka.knowledge_path
-                session.expunge(ka)
+                ka_cwd = kb.knowledge_path
+                session.expunge(kb)
 
         # Detach before session closes so attributes remain accessible after expiry
         session.expunge(run)
@@ -107,7 +104,7 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
 
     try:
         result = await asyncio.wait_for(
-            runner.run(run, agent, cwd=ka_cwd),
+            runner.run(run, agent, persist_session=True, resume_session_id=resume_session_id, cwd=ka_cwd, initial_context=initial_context),
             timeout=agent.timeout_seconds,
         )
 
@@ -163,11 +160,11 @@ def _mark_failed(run_id: str, error: str) -> None:
             session.commit()
 
 
-async def _run_knowledge(run: Run, ka: KnowledgeAgent) -> None:
+async def _run_knowledge(run: Run, kb: KnowledgeBase) -> None:
     runner = KnowledgeRunner()
     run_id = run.id
     try:
-        result = await runner.run(run, ka)
+        result = await runner.run(run, kb)
         with Session(engine, expire_on_commit=False) as session:
             run = session.get(Run, run_id)
             run.status = RunStatus.success
@@ -181,14 +178,14 @@ async def _run_knowledge(run: Run, ka: KnowledgeAgent) -> None:
             session.add(run)
             session.commit()
         await send_notification(
-            title=f"✅ {ka.name} completado",
+            title=f"✅ {kb.name} completado",
             message=f"Tokens: {result.tokens_input + result.tokens_output}",
             priority="default",
         )
     except Exception as e:
         _mark_failed(run_id, str(e))
         await send_notification(
-            title=f"❌ {ka.name} falló",
+            title=f"❌ {kb.name} falló",
             message=str(e)[:200],
             priority="high",
         )

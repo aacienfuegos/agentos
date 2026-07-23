@@ -27,7 +27,7 @@ class AgentDefinition(SQLModel, table=True):
     max_tokens: int = 4096
     timeout_seconds: int = 300
     is_builtin: bool = False
-    knowledge_agent_id: str | None = None
+    knowledge_base_id: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -53,7 +53,8 @@ class Run(SQLModel, table=True):
     agent_id: str = Field(foreign_key="agent_definitions.id")
     schedule_id: str | None = None
     status: RunStatus = RunStatus.pending
-    triggered_by: str = "manual"  # "manual" | "schedule" | "api" | "webhook"
+    triggered_by: str = "manual"  # "manual" | "schedule" | "api"
+    run_type: str = "agent"       # "agent" | "chat" | "knowledge" | "execute"
     input_params: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     output: str | None = None
     error: str | None = None
@@ -68,19 +69,14 @@ class Run(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class KnowledgeAgent(SQLModel, table=True):
-    __tablename__ = "knowledge_agents"
+class KnowledgeBase(SQLModel, table=True):
+    __tablename__ = "knowledge_bases"
 
     id: str = Field(primary_key=True)  # slug, e.g. "homelab"
     name: str
     description: str = ""
-    system_prompt: str = ""
-    # Path to the knowledge directory. Default: /data/knowledge/{id} (auto-managed).
-    # Can be overridden to point to any container-accessible path (e.g. mounted external volume).
     knowledge_path: str = ""
-    model: str = "claude-sonnet-4-6"
-    max_tokens: int = 4096
-    tools: list[str] = Field(default_factory=lambda: ["Read", "Write"], sa_column=Column(JSON))
+    instructions: dict = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

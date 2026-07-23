@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, Agent, KnowledgeAgent } from "@/lib/api";
+import { api, Agent, KnowledgeBase } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -38,19 +38,19 @@ type AgentForm = {
   tools: string;
   timeout_seconds: string;
   max_tokens: string;
-  knowledge_agent_id: string;
+  knowledge_base_id: string;
 };
 
 const DEFAULT_FORM: AgentForm = {
   id: "", name: "", description: "", system_prompt: "",
   model: "claude-sonnet-4-6", tools: "", timeout_seconds: "300",
-  max_tokens: "8192", knowledge_agent_id: "",
+  max_tokens: "8192", knowledge_base_id: "",
 };
 
 export default function AgentsPage() {
   const router = useRouter();
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [knowledgeAgents, setKnowledgeAgents] = useState<KnowledgeAgent[]>([]);
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [selected, setSelected] = useState<Agent | null>(null);
   const [params, setParams] = useState<Record<string, string>>({});
   const [launching, setLaunching] = useState(false);
@@ -68,7 +68,7 @@ export default function AgentsPage() {
   const [deleting, setDeleting] = useState(false);
 
   const load = () =>
-    Promise.all([api.agents.list().then(setAgents), api.knowledgeAgents.list().then(setKnowledgeAgents)]);
+    Promise.all([api.agents.list().then(setAgents), api.knowledgeBases.list().then(setKnowledgeBases)]);
 
   useEffect(() => { load(); }, []);
 
@@ -95,7 +95,7 @@ export default function AgentsPage() {
         tools: result.tools.join(", "),
         timeout_seconds: "300",
         max_tokens: "8192",
-        knowledge_agent_id: result.knowledge_agent_id ?? "",
+        knowledge_base_id: result.knowledge_base_id ?? "",
       });
       setCreateTab("manual");
     } catch (e) {
@@ -118,7 +118,7 @@ export default function AgentsPage() {
         tools: form.tools.split(",").map((t) => t.trim()).filter(Boolean),
         timeout_seconds: parseInt(form.timeout_seconds) || 300,
         max_tokens: parseInt(form.max_tokens) || 8192,
-        knowledge_agent_id: form.knowledge_agent_id || null,
+        knowledge_base_id: form.knowledge_base_id || null,
       });
       setCreating(false);
       await load();
@@ -139,7 +139,7 @@ export default function AgentsPage() {
       tools: agent.tools.join(", "),
       timeout_seconds: String(agent.timeout_seconds),
       max_tokens: String(agent.max_tokens),
-      knowledge_agent_id: agent.knowledge_agent_id ?? "",
+      knowledge_base_id: agent.knowledge_base_id ?? "",
     });
     setEditing(agent);
   };
@@ -157,7 +157,7 @@ export default function AgentsPage() {
         tools: editForm.tools.split(",").map((t) => t.trim()).filter(Boolean),
         timeout_seconds: parseInt(editForm.timeout_seconds) || editing.timeout_seconds,
         max_tokens: parseInt(editForm.max_tokens) || editing.max_tokens,
-        knowledge_agent_id: editForm.knowledge_agent_id || null,
+        knowledge_base_id: editForm.knowledge_base_id || null,
       });
       setEditing(null);
       await load();
@@ -201,7 +201,7 @@ export default function AgentsPage() {
     }
   };
 
-  const kaName = (id: string | null) => knowledgeAgents.find((k) => k.id === id)?.name ?? id;
+  const kaName = (id: string | null) => knowledgeBases.find((k) => k.id === id)?.name ?? id;
 
   return (
     <div className="space-y-6">
@@ -235,9 +235,9 @@ export default function AgentsPage() {
                 <span className="text-xs px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded">
                   {agent.timeout_seconds}s
                 </span>
-                {agent.knowledge_agent_id && (
+                {agent.knowledge_base_id && (
                   <span className="text-xs px-1.5 py-0.5 bg-emerald-900/50 text-emerald-400 rounded">
-                    kb: {kaName(agent.knowledge_agent_id)}
+                    kb: {kaName(agent.knowledge_base_id)}
                   </span>
                 )}
               </div>
@@ -341,7 +341,7 @@ export default function AgentsPage() {
               )}
             </div>
           ) : (
-            <AgentFormFields form={form} setForm={setForm} knowledgeAgents={knowledgeAgents} />
+            <AgentFormFields form={form} setForm={setForm} knowledgeBases={knowledgeBases} />
           )}
 
           {createTab === "manual" && (
@@ -361,7 +361,7 @@ export default function AgentsPage() {
             <DialogTitle>Editar: {editing?.name}</DialogTitle>
           </DialogHeader>
           <form onSubmit={saveEdit} className="space-y-4 pt-2">
-            <AgentFormFields form={editForm} setForm={setEditForm} knowledgeAgents={knowledgeAgents} showId={false} />
+            <AgentFormFields form={editForm} setForm={setEditForm} knowledgeBases={knowledgeBases} showId={false} />
             <div className="flex items-center justify-between pt-1">
               <button
                 type="button"
@@ -385,12 +385,12 @@ export default function AgentsPage() {
 function AgentFormFields({
   form,
   setForm,
-  knowledgeAgents,
+  knowledgeBases,
   showId = true,
 }: {
   form: AgentForm;
   setForm: React.Dispatch<React.SetStateAction<AgentForm>>;
-  knowledgeAgents: KnowledgeAgent[];
+  knowledgeBases: KnowledgeBase[];
   showId?: boolean;
 }) {
   const set = (key: keyof AgentForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
@@ -444,13 +444,13 @@ function AgentFormFields({
           onChange={(v) => setForm((f) => ({ ...f, tools: v }))}
         />
       </div>
-      {knowledgeAgents.length > 0 && (
+      {knowledgeBases.length > 0 && (
         <div className="space-y-1.5">
           <Label className="text-zinc-400 text-xs">Base de conocimiento (opcional)</Label>
-          <select value={form.knowledge_agent_id} onChange={set("knowledge_agent_id")} className={selectCls}>
+          <select value={form.knowledge_base_id} onChange={set("knowledge_base_id")} className={selectCls}>
             <option value="">Sin base de conocimiento</option>
-            {knowledgeAgents.map((ka) => (
-              <option key={ka.id} value={ka.id}>{ka.name}</option>
+            {knowledgeBases.map((kb) => (
+              <option key={kb.id} value={kb.id}>{kb.name}</option>
             ))}
           </select>
         </div>
