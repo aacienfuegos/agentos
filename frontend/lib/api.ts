@@ -337,9 +337,14 @@ export const api = {
         apiFetch<void>(`/api/knowledge-bases/${id}/files/${path}`, { method: "DELETE" }),
       upload: async (id: string, files: File[]): Promise<{ written: string[]; errors: string[] }> => {
         const formData = new FormData();
-        for (const file of files) {
-          const path = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
-          formData.append("files", file, path);
+        const paths = files.map(
+          (f) => (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name,
+        );
+        const roots = new Set(paths.map((p) => p.split("/")[0]));
+        const stripRoot = roots.size === 1 && paths.some((p) => p.includes("/"));
+        for (let i = 0; i < files.length; i++) {
+          const path = stripRoot ? paths[i].split("/").slice(1).join("/") : paths[i];
+          formData.append("files", files[i], path || files[i].name);
         }
         const res = await fetch(`${BASE_URL}/api/knowledge-bases/${id}/upload`, {
           method: "POST",
