@@ -127,6 +127,9 @@ function FileTree({
       return parent === parentPath;
     });
     entries.sort((a, b) => {
+      const aIsIndex = a.path === "knowledge.md";
+      const bIsIndex = b.path === "knowledge.md";
+      if (aIsIndex !== bIsIndex) return aIsIndex ? -1 : 1;
       if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
       return a.path.localeCompare(b.path);
     });
@@ -150,6 +153,7 @@ function FileTree({
           </div>
         );
       }
+      const isIndex = f.path === "knowledge.md";
       return (
         <button
           key={f.path}
@@ -157,11 +161,13 @@ function FileTree({
           className={`w-full flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono text-left transition-colors rounded ${
             selected === f.path
               ? "bg-amber-400/10 text-amber-300"
-              : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]"
+              : isIndex
+                ? "text-amber-600/70 hover:text-amber-400 hover:bg-white/[0.03]"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]"
           }`}
           style={{ paddingLeft: `${8 + indent}px` }}
         >
-          <span className="text-zinc-700">·</span>
+          <span className={isIndex ? "text-amber-700/60" : "text-zinc-700"}>·</span>
           <span className="truncate">{name}</span>
           {f.size != null && (
             <span className="ml-auto text-zinc-800 shrink-0">{f.size < 1024 ? `${f.size}b` : `${(f.size / 1024).toFixed(1)}k`}</span>
