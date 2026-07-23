@@ -320,6 +320,8 @@ export default function RunsList() {
                 const isExpanded = expandedRuns.has(run.id);
                 const isLastRow = isLast && !isExpanded;
                 const children = childRuns[run.id];
+                const mayHaveChildren = run.status === "success" && run.agent_id !== "__execute__"
+                  && (children === undefined || children.length > 0);
 
                 return [
                   <tr
@@ -328,7 +330,7 @@ export default function RunsList() {
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
-                        {run.status === "success" && run.agent_id !== "__execute__" ? (
+                        {mayHaveChildren ? (
                           <button
                             onClick={() => toggleExpand(run.id, () => api.runs.list({ original_run_id: run.id, limit: 50 }))}
                             className="shrink-0 text-zinc-600 hover:text-zinc-300 transition-colors"
