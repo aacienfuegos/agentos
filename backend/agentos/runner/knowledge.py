@@ -121,11 +121,14 @@ def _build_system_prompt(kb: KnowledgeBase, mode: str = "chat") -> str:
         f"Directorio: `{kb.knowledge_path}`\n\n"
         f"Estructura actual:\n```\n{tree}\n```\n\n"
         f"Usa Read, Write, Edit, Grep y LS para explorar y actualizar los ficheros. "
-        f"Las rutas relativas se resuelven desde el directorio raíz de la base de conocimiento.\n\n"
-        f"Mantenimiento del índice: si hay ficheros en el árbol que no aparecen en `knowledge.md`, "
-        f"o entradas en `knowledge.md` que ya no existen, actualiza el índice. "
-        f"Cuando crees o elimines un fichero, refleja el cambio en `knowledge.md` en la misma respuesta. "
-        f"Las descripciones deben indicar el propósito del fichero, no su contenido actual."
+        f"Las rutas relativas se resuelven desde el directorio raíz de la base de conocimiento."
+        + (
+            "\n\nMantenimiento del índice: si hay ficheros en el árbol que no aparecen en "
+            "`knowledge.md`, o entradas en `knowledge.md` que ya no existen, actualiza el índice. "
+            "Cuando crees o elimines un fichero, refleja el cambio en `knowledge.md` en la misma "
+            "respuesta. Las descripciones deben indicar el propósito del fichero, no su contenido actual."
+            if mode == "chat" else ""
+        )
     )
 
     return "\n\n".join(parts)
