@@ -167,7 +167,7 @@ function FileTree({
           }`}
           style={{ paddingLeft: `${8 + indent}px` }}
         >
-          <span className={isIndex ? "text-amber-700/60" : "text-zinc-700"}>·</span>
+          {depth > 0 && <span className={isIndex ? "text-amber-700/60" : "text-zinc-700"}>·</span>}
           <span className="truncate">{name}</span>
           {f.size != null && (
             <span className="ml-auto text-zinc-800 shrink-0">{f.size < 1024 ? `${f.size}b` : `${(f.size / 1024).toFixed(1)}k`}</span>
