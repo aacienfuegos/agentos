@@ -298,17 +298,20 @@ export function AgentChatPanel({
 
       {/* Main chat area */}
       <div className="flex flex-col flex-1 min-w-0 gap-3">
-        {/* Messages */}
-        <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] p-4 space-y-4">
-          {!sidebarOpen && (
+        {!sidebarOpen && (
+          <div className="shrink-0">
             <button
               onClick={() => setSidebarOpen(true)}
-              className="absolute top-2 left-2 text-zinc-700 hover:text-zinc-400 transition-colors"
               title="Mostrar conversaciones"
+              className="text-zinc-700 hover:text-zinc-400 transition-colors"
             >
               <PanelLeftOpen className="w-3.5 h-3.5" />
             </button>
-          )}
+          </div>
+        )}
+
+        {/* Messages */}
+        <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] p-4 space-y-4">
 
           {messages.length === 0 && (
             <div className="flex justify-start">
@@ -412,15 +415,6 @@ export function AgentChatPanel({
 
         {/* Input row */}
         <div className="shrink-0 flex gap-2">
-          {!sidebarOpen && (
-            <button
-              onClick={() => setSidebarOpen(true)}
-              title="Mostrar conversaciones"
-              className="self-end p-3 rounded-xl border border-white/[0.06] text-zinc-700 hover:text-zinc-400 transition-colors"
-            >
-              <PanelLeftOpen className="w-3.5 h-3.5" />
-            </button>
-          )}
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
