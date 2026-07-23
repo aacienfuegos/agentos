@@ -20,6 +20,7 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
       - NTFY_URL=${NTFY_URL:-}
       - ENV=development
+      - INFRA_AGENTS_ENABLED=${INFRA_AGENTS_ENABLED:-false}
     volumes:
       - ./backend/agentos:/app/agentos   # hot reload del código Python
       - ./backend/alembic:/app/alembic   # migraciones disponibles en dev
@@ -28,6 +29,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${HOME}/.claude:/home/worker/.claude
       - ${HOME}/.claude.json:/home/worker/.claude.json
+      - ./scripts/infra-dev/keys/agentos_infra:/home/worker/.ssh/agentos_infra:ro
+      - ./scripts/infra-dev/ssh_config:/home/worker/.ssh/config:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -54,6 +57,7 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
       - NTFY_URL=${NTFY_URL:-}
       - ENV=development
+      - INFRA_AGENTS_ENABLED=${INFRA_AGENTS_ENABLED:-false}
     volumes:
       - ./backend/agentos:/app/agentos
       - backend_data:/data
@@ -61,6 +65,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${HOME}/.claude:/home/worker/.claude
       - ${HOME}/.claude.json:/home/worker/.claude.json
+      - ./scripts/infra-dev/keys/agentos_infra:/home/worker/.ssh/agentos_infra:ro
+      - ./scripts/infra-dev/ssh_config:/home/worker/.ssh/config:ro
       # Knowledge agents con rutas externas: monta aquí los directorios del host.
       # Ejemplo: - ${HOME}/docu:/knowledge:rw
       # Luego pon knowledge_path=/knowledge/homelab en la config del agente.
@@ -70,6 +76,23 @@ services:
       backend:
         condition: service_healthy
     command: uv run watchfiles "python -m arq agentos.worker.tasks.WorkerSettings" agentos
+
+  # Objetivo SSH de solo lectura para probar infra-architect en local, sin tocar
+  # infraestructura real. Forced-command allowlist en authorized_keys — el agente
+  # solo puede ejecutar diagnósticos de lectura (ver scripts/infra-dev/allowed-commands.sh).
+  infra-dev-target:
+    image: linuxserver/openssh-server:latest
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - USER_NAME=agentos
+      - PASSWORD_ACCESS=false
+    volumes:
+      - ./scripts/infra-dev/authorized_keys:/config/.ssh/authorized_keys:ro
+      - ./scripts/infra-dev/allowed-commands.sh:/config/allowed-commands.sh:ro
+    ports:
+      - "2222:2222"
 
   redis:
     image: redis:7-alpine

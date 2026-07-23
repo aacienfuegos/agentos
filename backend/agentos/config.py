@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # Harness
     harness_path: str = "~/.claude"
 
+    # Infra agents (phase:infra-agents-1) — disabled by default, single-tenant only
+    infra_agents_enabled: bool = False
+
     @property
     def is_dev(self) -> bool:
         return self.env == "development"

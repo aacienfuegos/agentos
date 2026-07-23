@@ -29,6 +29,10 @@ backend/data/
 # Docker
 .docker/
 
+# Infra dev-target — claves generadas localmente, nunca commitear
+scripts/infra-dev/keys/
+scripts/infra-dev/authorized_keys
+
 # OS
 .DS_Store
 Thumbs.db

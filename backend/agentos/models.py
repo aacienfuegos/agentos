@@ -92,6 +92,19 @@ class ApiKey(SQLModel, table=True):
     enabled: bool = True
 
 
+class InfraTarget(SQLModel, table=True):
+    __tablename__ = "infra_targets"
+
+    id: str = Field(primary_key=True)  # slug, e.g. "homelab-dev"
+    name: str
+    host: str
+    ssh_user: str
+    ssh_port: int = 22
+    notes: str = ""
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class LogEntry(SQLModel, table=True):
     __tablename__ = "log_entries"
 

@@ -4,6 +4,7 @@ from pathlib import Path
 import yaml
 from sqlmodel import Session
 
+from ..config import settings
 from ..database import engine
 from ..models import AgentDefinition
 
@@ -93,6 +94,40 @@ BUILTIN_AGENTS: list[dict] = [
     },
 ]
 
+# phase:infra-agents-1 — solo se registra si INFRA_AGENTS_ENABLED=true (ver
+# docs/infra-agents-design.md). Puramente advisory: sin Write, nunca aplica
+# cambios, solo diagnostica sobre los InfraTarget configurados vía SSH.
+INFRA_AGENTS: list[dict] = [
+    {
+        "id": "infra-architect",
+        "name": "Infra Architect",
+        "description": "Diagnostica InfraTargets vía SSH de solo lectura y propone cambios de infraestructura. No aplica nada.",
+        "system_prompt": (
+            "Eres un arquitecto de infraestructura en modo solo lectura. "
+            "Tu tarea es diagnosticar el estado de un InfraTarget y, si se te pide, "
+            "proponer un plan de cambios — nunca aplicarlos tú mismo. "
+            "Conéctate por SSH usando el alias configurado en ~/.ssh/config, por ejemplo: "
+            "`ssh infra-dev-target uptime`. "
+            "El host remoto tiene un allowlist de comandos (`command=` forzado en "
+            "authorized_keys) que solo permite diagnósticos de solo lectura "
+            "(uptime, df -h, docker ps, ip a, journalctl, etc.) — cualquier otro "
+            "comando será rechazado por el propio host, es una barrera de seguridad "
+            "real, no confíes en tu propio criterio para no intentar mutar nada. "
+            "Nunca sugieras ni intentes comandos de escritura (rm, systemctl restart, "
+            "docker stop, etc.) contra el target — si necesitas proponer un cambio, "
+            "descríbelo en el informe para que un humano lo aplique o lo delegue a un "
+            "agente deployer separado con aprobación explícita. "
+            "Formato de salida: informe estructurado con secciones: Situación actual, "
+            "Hallazgos, Riesgos, Recomendación, Plan de rollback si aplica."
+        ),
+        "tools": ["Bash", "Read"],
+        "model": "claude-sonnet-4-6",
+        "max_tokens": 8192,
+        "timeout_seconds": 300,
+        "is_builtin": True,
+    },
+]
+
 
 def _load_yaml_agents() -> list[dict]:
     agents = []
@@ -117,6 +152,8 @@ def seed_builtin_agents() -> None:
     from datetime import datetime
 
     all_agents = BUILTIN_AGENTS + _load_yaml_agents()
+    if settings.infra_agents_enabled:
+        all_agents += INFRA_AGENTS
 
     with Session(engine) as session:
         mutable_fields = {"name", "description", "system_prompt", "tools", "model", "max_tokens", "timeout_seconds", "is_builtin"}
