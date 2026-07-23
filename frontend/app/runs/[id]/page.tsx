@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import type { Run } from "@/lib/api";
 import { LogStream, InfoMessage } from "@/components/LogStream";
+import { AgentChatPanel } from "@/components/AgentChatPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Copy, Check, Download, Code } from "lucide-react";
 
@@ -47,14 +48,28 @@ function MetaDot() {
   return <span className="text-zinc-700">·</span>;
 }
 
+const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
+
 export default function RunDetail() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [run, setRun] = useState<Run | null>(null);
   const [agentName, setAgentName] = useState<string | null>(null);
   const [agentLink, setAgentLink] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [copiedOutput, setCopiedOutput] = useState(false);
   const [rawOutput, setRawOutput] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(searchParams.get("conv"));
+
+  const handleConversationChange = (convId: string | null) => {
+    setConversationId(convId);
+    if (convId) {
+      router.replace(`/runs/${id}?conv=${convId}`, { scroll: false });
+    } else {
+      router.replace(`/runs/${id}`, { scroll: false });
+    }
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -121,6 +136,11 @@ export default function RunDetail() {
 
   const isLive = run.status === "running" || run.status === "pending";
   const totalTokens = (run.tokens_input ?? 0) + (run.tokens_output ?? 0);
+  const canChat =
+    run.status === "success" &&
+    run.session_id != null &&
+    !run.agent_id.startsWith("knowledge:") &&
+    run.agent_id !== "__execute__";
 
   return (
     // nav=56px + py-8 top+bottom=64px → contenido ocupa exactamente lo que queda
@@ -193,7 +213,7 @@ export default function RunDetail() {
       )}
 
       {/* Tabs — flex-1 para ocupar el espacio restante */}
-      <Tabs defaultValue={run.output ? "output" : "logs"} className="flex-1 min-h-0 gap-0">
+      <Tabs defaultValue={canChat && conversationId ? "chat" : run.output ? "output" : "logs"} className="flex-1 min-h-0 gap-0">
         <TabsList className="bg-transparent border-0 shrink-0 p-0 gap-1">
           <TabsTrigger value="output" className="text-xs font-mono px-3 py-1.5 rounded-md data-active:bg-white/[0.06] data-active:text-zinc-100 text-zinc-500 hover:text-zinc-300">
             resultado
@@ -201,6 +221,11 @@ export default function RunDetail() {
           <TabsTrigger value="logs" className="text-xs font-mono px-3 py-1.5 rounded-md data-active:bg-white/[0.06] data-active:text-zinc-100 text-zinc-500 hover:text-zinc-300">
             logs
           </TabsTrigger>
+          {canChat && (
+            <TabsTrigger value="chat" className="text-xs font-mono px-3 py-1.5 rounded-md data-active:bg-white/[0.06] data-active:text-zinc-100 text-zinc-500 hover:text-zinc-300">
+              chat
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="output" className="mt-2 min-h-0 overflow-hidden flex flex-col" keepMounted>
@@ -246,6 +271,19 @@ export default function RunDetail() {
         <TabsContent value="logs" className="mt-2 min-h-0 overflow-hidden flex flex-col" keepMounted>
           <LogStream runId={id} isLive={isLive} />
         </TabsContent>
+
+        {canChat && (
+          <TabsContent value="chat" className="mt-2 min-h-0 overflow-hidden flex flex-col" keepMounted>
+            <AgentChatPanel
+              agentId={run.agent_id}
+              initialSessionId={run.session_id!}
+              initialOutput={run.output ?? ""}
+              backendUrl={backendUrl}
+              conversationId={conversationId}
+              onConversationChange={handleConversationChange}
+            />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

@@ -81,9 +81,11 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
         session.add(run)
         session.commit()
 
-        # Inject knowledge agent context if configured
+        resume_session_id: str | None = run.input_params.get("resume_session_id")
+
+        # Inject knowledge agent context if configured and not resuming a session
         ka_cwd: str | None = None
-        if agent.knowledge_agent_id:
+        if not resume_session_id and agent.knowledge_agent_id:
             ka = session.get(KnowledgeAgent, agent.knowledge_agent_id)
             if ka:
                 from ..runner.knowledge import ensure_knowledge_dir
@@ -107,7 +109,7 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
 
     try:
         result = await asyncio.wait_for(
-            runner.run(run, agent, cwd=ka_cwd),
+            runner.run(run, agent, persist_session=True, resume_session_id=resume_session_id, cwd=ka_cwd),
             timeout=agent.timeout_seconds,
         )
 
