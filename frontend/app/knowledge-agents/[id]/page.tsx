@@ -3,10 +3,31 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { api, KnowledgeAgent, KnowledgeFile, Run, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
+import { api, KnowledgeAgent, KnowledgeFile, Run, SearchResult, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
+import { InfoMessage } from "@/components/LogStream";
 import { fmtTokens, generateUUID } from "@/lib/utils";
+import { Copy, Check, Code, Pencil, RotateCcw, Save, Trash2, Eye } from "lucide-react";
+import hljs from "highlight.js";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
+
+const EXT_LANG: Record<string, string> = {
+  py: "python", js: "javascript", jsx: "javascript",
+  ts: "typescript", tsx: "typescript", json: "json",
+  yaml: "yaml", yml: "yaml", toml: "toml",
+  sh: "bash", bash: "bash", css: "css",
+  html: "html", htm: "html", sql: "sql",
+  rs: "rust", go: "go", java: "java",
+  cpp: "cpp", c: "c", h: "c", xml: "xml",
+};
+
+function fileExt(path: string): string {
+  return path.split(".").pop()?.toLowerCase() ?? "";
+}
+
+function fileHighlightLang(path: string): string | null {
+  return EXT_LANG[fileExt(path)] ?? null;
+}
 
 type View = "chat" | "archivos" | "conversations" | "config";
 
@@ -40,6 +61,43 @@ interface LiveLogEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Search helpers (issue #197)
+// ---------------------------------------------------------------------------
+
+// Mirrors _parse_query() in backend/agentos/api/knowledge_agents.py.
+// Must stay in sync: same smart-case rule and same quoted-phrase extraction
+// so client-side highlighting matches exactly what the server found.
+function parseSearchTerms(q: string): { terms: string[]; phrases: string[]; caseSensitive: boolean } {
+  const caseSensitive = /[A-Z]/.test(q);
+  const phrases: string[] = [];
+  for (const m of q.matchAll(/"([^"]+)"/g)) phrases.push(m[1]);
+  const remaining = q.replace(/"[^"]+"/g, " ");
+  return { terms: remaining.split(/\s+/).filter(Boolean), phrases, caseSensitive };
+}
+
+function HighlightedLine({
+  text, terms, phrases, caseSensitive,
+}: {
+  text: string; terms: string[]; phrases: string[]; caseSensitive: boolean;
+}) {
+  const needles = [...phrases, ...terms].filter(Boolean).sort((a, b) => b.length - a.length);
+  if (needles.length === 0) return <span>{text}</span>;
+  const pattern = needles.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  // Capturing group in the RegExp causes split() to include the matched
+  // segments in the result array. Odd indices are matches, even are plain text.
+  const parts = text.split(new RegExp(`(${pattern})`, caseSensitive ? "g" : "gi"));
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1
+          ? <mark key={i} className="bg-amber-400/25 text-amber-100 rounded-sm px-0.5 not-italic font-normal">{part}</mark>
+          : <span key={i}>{part}</span>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // File browser helpers
 // ---------------------------------------------------------------------------
 
@@ -47,11 +105,26 @@ function FileTree({
   files,
   selected,
   onSelect,
+  collapsed,
+  onToggle,
+  search,
 }: {
   files: KnowledgeFile[];
   selected: string | null;
   onSelect: (path: string) => void;
+  collapsed: Set<string>;
+  onToggle: (path: string) => void;
+  search: string;
 }) {
+  const query = search.toLowerCase();
+
+  const hasMatch = (path: string): boolean => {
+    const file = files.find((f) => f.path === path);
+    if (!file) return false;
+    if (!file.is_dir) return file.path.toLowerCase().includes(query);
+    return files.some((f) => !f.is_dir && f.path.startsWith(path + "/") && f.path.toLowerCase().includes(query));
+  };
+
   const renderEntries = (parentPath: string, depth: number): React.ReactNode => {
     const entries = files.filter((f) => {
       const parts = f.path.split("/");
@@ -65,17 +138,20 @@ function FileTree({
     return entries.map((f) => {
       const name = f.path.split("/").at(-1)!;
       const indent = depth * 12;
+      if (query && !hasMatch(f.path)) return null;
       if (f.is_dir) {
+        const isCollapsed = !query && collapsed.has(f.path);
         return (
           <div key={f.path}>
-            <div
-              className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono text-zinc-600"
+            <button
+              onClick={() => !query && onToggle(f.path)}
+              className="w-full flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors text-left"
               style={{ paddingLeft: `${8 + indent}px` }}
             >
-              <span>▸</span>
+              <span className="shrink-0">{isCollapsed ? "▸" : "▾"}</span>
               <span>{name}/</span>
-            </div>
-            {renderEntries(f.path, depth + 1)}
+            </button>
+            {!isCollapsed && renderEntries(f.path, depth + 1)}
           </div>
         );
       }
@@ -131,6 +207,15 @@ export default function KnowledgeAgentDetail() {
   const [deletingFile, setDeletingFile] = useState(false);
   const [newFilePath, setNewFilePath] = useState("");
   const [showNewFile, setShowNewFile] = useState(false);
+  const [filePreview, setFilePreview] = useState(true);
+  const [copiedFile, setCopiedFile] = useState(false);
+  const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
+  const [fileSearch, setFileSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [contentSearchQuery, setContentSearchQuery] = useState("");
+  const [pendingScrollLine, setPendingScrollLine] = useState<number | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Upload state
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ written: string[]; errors: string[] } | null>(null);
@@ -151,6 +236,8 @@ export default function KnowledgeAgentDetail() {
   const [savingDefaultTools, setSavingDefaultTools] = useState(false);
   const [savedDefaultTools, setSavedDefaultTools] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
+  const [rawMessages, setRawMessages] = useState<Set<number>>(new Set());
+  const [copiedMsg, setCopiedMsg] = useState<number | null>(null);
   const [liveLogs, setLiveLogs] = useState<LiveLogEvent[]>([]);
   const liveEsRef = useRef<EventSource | null>(null);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
@@ -187,8 +274,14 @@ export default function KnowledgeAgentDetail() {
     }
   }, [id]);
 
-  const selectFile = async (path: string) => {
+  const selectFile = async (path: string, targetLine?: number) => {
+    // When coming from a search result, force raw textarea mode — markdown and
+    // hljs previews are static HTML and can't be scrolled programmatically to
+    // a specific character offset.
     setSelectedFile(path);
+    setFilePreview(targetLine === undefined);
+    setCopiedFile(false);
+    if (targetLine !== undefined) setPendingScrollLine(targetLine);
     setLoadingFile(true);
     try {
       const content = await api.knowledgeAgents.files.get(id, path);
@@ -235,6 +328,25 @@ export default function KnowledgeAgentDetail() {
     setNewFilePath("");
     await loadFiles();
     selectFile(newFilePath.trim());
+  };
+
+  const triggerContentSearch = async (q: string) => {
+    setSearching(true);
+    setContentSearchQuery(q);
+    try {
+      const results = await api.knowledgeAgents.search(id, q);
+      setSearchResults(results);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchResults(null);
+    setContentSearchQuery("");
+    setFileSearch("");
   };
 
   const handleUpload = useCallback(async (inputFiles: FileList | File[]) => {
@@ -335,6 +447,24 @@ export default function KnowledgeAgentDetail() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  useEffect(() => {
+    if (pendingScrollLine === null || filePreview || loadingFile || !textareaRef.current || !fileContent) return;
+    const el = textareaRef.current;
+    const lines = fileContent.split("\n");
+    const targetIdx = pendingScrollLine - 1;
+    const charsBefore = lines.slice(0, targetIdx).reduce((acc, l) => acc + l.length + 1, 0);
+    // Textarea doesn't expose per-line offsets, so we approximate scroll
+    // position as the fraction of characters before the target line.
+    // This is accurate for monospaced fonts with wrap="off"; with wrapping
+    // it's an approximation that's good enough for most files.
+    const fraction = Math.min(charsBefore / Math.max(fileContent.length, 1), 1);
+    el.scrollTop = Math.max(0, fraction * el.scrollHeight - el.clientHeight / 3);
+    // Select the target line — browser handles the visual highlight
+    el.focus();
+    el.setSelectionRange(charsBefore, charsBefore + (lines[targetIdx]?.length ?? 0));
+    setPendingScrollLine(null);
+  }, [fileContent, pendingScrollLine, filePreview, loadingFile]);
 
   const finalizeRun = async (run_id: string) => {
     liveEsRef.current?.close();
@@ -476,6 +606,15 @@ export default function KnowledgeAgentDetail() {
     }
   };
 
+  const fileDirty = editingContent !== fileContent;
+
+  useEffect(() => {
+    if (!fileDirty) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [fileDirty]);
+
   if (!agent) return <div className="text-zinc-500 text-sm p-8">Cargando…</div>;
 
   const agentTools = agent.tools ?? ["Read", "Write"];
@@ -487,8 +626,6 @@ export default function KnowledgeAgentDetail() {
     configForm.knowledge_path !== agent.knowledge_path ||
     configForm.tools.length !== agentTools.length ||
     configForm.tools.some((t) => !agentTools.includes(t));
-
-  const fileDirty = editingContent !== fileContent;
 
   return (
     <div className="flex flex-col h-[calc(100dvh-120px)] gap-4">
@@ -665,18 +802,43 @@ export default function KnowledgeAgentDetail() {
                     </div>
                   ) : (
                     <>
-                      <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{msg.content}</pre>
-                      {msg.role === "assistant" && (
-                        <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/[0.04] text-[11px] font-mono text-zinc-700">
-                          {msg.status && <span className={STATUS_TEXT[msg.status]}>{msg.status}</span>}
-                          {msg.tokens != null && msg.tokens > 0 && <span>{fmtTokens(msg.tokens)} tokens</span>}
-                          {msg.run_id && (
-                            <Link href={`/runs/${msg.run_id}`} className="hover:text-zinc-500 transition-colors">
-                              ver run →
-                            </Link>
-                          )}
-                        </div>
+                      {rawMessages.has(i) ? (
+                        <pre className="whitespace-pre-wrap text-sm font-mono leading-relaxed text-zinc-300">{msg.content}</pre>
+                      ) : (
+                        <InfoMessage message={msg.content} />
                       )}
+                      <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/[0.04] text-[11px] font-mono text-zinc-700">
+                        {msg.role === "assistant" && msg.status && <span className={STATUS_TEXT[msg.status]}>{msg.status}</span>}
+                        {msg.role === "assistant" && msg.tokens != null && msg.tokens > 0 && <span>{fmtTokens(msg.tokens)} tokens</span>}
+                        {msg.role === "assistant" && msg.run_id && (
+                          <Link href={`/runs/${msg.run_id}`} className="hover:text-zinc-500 transition-colors">
+                            ver run →
+                          </Link>
+                        )}
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(msg.content).then(() => {
+                              setCopiedMsg(i);
+                              setTimeout(() => setCopiedMsg((c) => c === i ? null : c), 2000);
+                            });
+                          }}
+                          className="ml-auto flex items-center gap-1.5 transition-colors hover:text-zinc-500"
+                        >
+                          {copiedMsg === i ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          {copiedMsg === i ? "copiado" : "copiar"}
+                        </button>
+                        <button
+                          onClick={() => setRawMessages((prev) => {
+                            const next = new Set(prev);
+                            next.has(i) ? next.delete(i) : next.add(i);
+                            return next;
+                          })}
+                          className={`flex items-center gap-1 transition-colors ${rawMessages.has(i) ? "text-amber-400" : "hover:text-zinc-500"}`}
+                        >
+                          <Code className="w-3 h-3" />
+                          raw
+                        </button>
+                      </div>
                     </>
                   )}
                 </div>
@@ -742,7 +904,24 @@ export default function KnowledgeAgentDetail() {
                   {agent.knowledge_path.replace(/^\/data\/knowledge\//, "~/")}
                 </span>
                 <div className="flex items-center gap-1 shrink-0">
-                  {/* Upload menu */}
+                  {files.some((f) => f.is_dir) && (
+                    <>
+                      <button
+                        onClick={() => setCollapsedDirs(new Set(files.filter((f) => f.is_dir).map((f) => f.path)))}
+                        className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors"
+                        title="Colapsar todo"
+                      >
+                        ⊟
+                      </button>
+                      <button
+                        onClick={() => setCollapsedDirs(new Set())}
+                        className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors"
+                        title="Expandir todo"
+                      >
+                        ⊕
+                      </button>
+                    </>
+                  )}
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploading}
@@ -768,6 +947,21 @@ export default function KnowledgeAgentDetail() {
                   </button>
                 </div>
               </div>
+
+              {files.length > 0 && (
+                <input
+                  value={fileSearch}
+                  onChange={(e) => { setFileSearch(e.target.value); if (searchResults) setSearchResults(null); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") clearSearch();
+                    if (e.key === "Enter" && fileSearch.trim()) triggerContentSearch(fileSearch.trim());
+                  }}
+                  placeholder={searching ? "buscando···" : "filtrar… (Enter: buscar contenido)"}
+                  className={`shrink-0 w-full bg-transparent border-b px-2 py-0.5 text-[11px] font-mono text-zinc-400 placeholder-zinc-700 focus:outline-none transition-colors ${
+                    searchResults !== null ? "border-amber-400/30" : "border-white/[0.05] focus:border-amber-400/20"
+                  }`}
+                />
+              )}
 
               {showNewFile && (
                 <div className="flex gap-1 shrink-0">
@@ -809,7 +1003,18 @@ export default function KnowledgeAgentDetail() {
                     <p className="text-[10px] text-zinc-800">arrastra aquí o usa ↑</p>
                   </div>
                 ) : (
-                  <FileTree files={files} selected={selectedFile} onSelect={selectFile} />
+                  <FileTree
+                    files={files}
+                    selected={selectedFile}
+                    onSelect={selectFile}
+                    collapsed={collapsedDirs}
+                    onToggle={(path) => setCollapsedDirs((prev) => {
+                      const next = new Set(prev);
+                      next.has(path) ? next.delete(path) : next.add(path);
+                      return next;
+                    })}
+                    search={fileSearch}
+                  />
                 )}
               </div>
 
@@ -821,26 +1026,203 @@ export default function KnowledgeAgentDetail() {
               </button>
             </div>
 
-            {/* Editor panel */}
+            {/* Editor / search results panel */}
             <div className="flex-1 min-w-0 flex flex-col gap-2 min-h-0">
-              {selectedFile ? (
+              {/* IIFE lets us declare consts inside a ternary branch */}
+              {searchResults !== null ? (() => {
+                const { terms, phrases, caseSensitive } = parseSearchTerms(contentSearchQuery);
+                const totalMatches = searchResults.reduce((s, r) => s + r.matches.length, 0);
+                return (
+                  <>
+                    {/* Header */}
+                    <div className="flex items-center justify-between shrink-0 px-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {searching ? (
+                          <span className="text-[11px] font-mono text-zinc-500 animate-pulse">buscando···</span>
+                        ) : (
+                          <>
+                            <span className="text-[11px] font-mono text-zinc-400">
+                              <span className="text-amber-400/70">"{contentSearchQuery}"</span>
+                            </span>
+                            <span className="text-[11px] font-mono text-zinc-600">
+                              {searchResults.length} fichero{searchResults.length !== 1 ? "s" : ""} · {totalMatches} coincidencia{totalMatches !== 1 ? "s" : ""}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <button
+                        onClick={clearSearch}
+                        className="text-[11px] font-mono text-zinc-700 hover:text-zinc-400 transition-colors shrink-0 ml-2"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {/* Results list */}
+                    <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-0.5">
+                      {!searching && searchResults.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-40 gap-2">
+                          <p className="text-xs font-mono text-zinc-700">sin resultados para "{contentSearchQuery}"</p>
+                          <p className="text-[11px] font-mono text-zinc-800">
+                            Prueba con menos palabras o usa comillas para frases exactas
+                          </p>
+                        </div>
+                      )}
+                      {searchResults.map((result) => {
+                        const dirPart = result.file.includes("/")
+                          ? result.file.slice(0, result.file.lastIndexOf("/") + 1)
+                          : "";
+                        const namePart = result.file.includes("/")
+                          ? result.file.slice(result.file.lastIndexOf("/") + 1)
+                          : result.file;
+                        return (
+                          <div key={result.file} className="rounded-xl border border-white/[0.05] overflow-hidden bg-zinc-900/30">
+                            {/* File header */}
+                            <button
+                              onClick={() => {
+                                selectFile(result.file);
+                                clearSearch();
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.03] transition-colors group"
+                            >
+                              <span className="text-[11px] font-mono min-w-0 truncate flex-1">
+                                {dirPart && <span className="text-zinc-600">{dirPart}</span>}
+                                <span className="text-amber-300/80 font-medium">{namePart}</span>
+                              </span>
+                              <span className="text-[10px] font-mono text-zinc-700 shrink-0 tabular-nums">
+                                {result.matches.length} match{result.matches.length !== 1 ? "es" : ""}
+                              </span>
+                              <span className="text-[10px] font-mono text-zinc-800 group-hover:text-zinc-500 transition-colors shrink-0">→</span>
+                            </button>
+
+                            {/* Match snippets */}
+                            {result.matches.length > 0 && (
+                              <div className="border-t border-white/[0.04]">
+                                {result.matches.map((match, mi) => (
+                                  <button
+                                    key={match.line_number}
+                                    onClick={() => { selectFile(result.file, match.line_number); clearSearch(); }}
+                                    className={`w-full text-left font-mono text-[11px] leading-relaxed hover:bg-white/[0.02] transition-colors group/match ${mi > 0 ? "border-t border-white/[0.04]" : ""}`}
+                                    title={`Abrir en línea ${match.line_number}`}
+                                  >
+                                    {/* Context before */}
+                                    {match.context_before.map((l, i) => (
+                                      <div key={`b${i}`} className="flex items-start gap-0">
+                                        <span className="text-zinc-800 w-10 text-right shrink-0 px-2 py-0.5 select-none tabular-nums">
+                                          {match.line_number - match.context_before.length + i}
+                                        </span>
+                                        <span className="text-zinc-700 py-0.5 pr-3 whitespace-pre-wrap break-all">{l || " "}</span>
+                                      </div>
+                                    ))}
+                                    {/* Match line */}
+                                    <div className="flex items-start gap-0 bg-amber-400/[0.04] border-l-2 border-amber-400/40">
+                                      <span className="text-zinc-500 w-10 text-right shrink-0 px-2 py-0.5 select-none tabular-nums">
+                                        {match.line_number}
+                                      </span>
+                                      <span className="text-zinc-200 py-0.5 pr-3 whitespace-pre-wrap break-all flex-1 min-w-0">
+                                        <HighlightedLine
+                                          text={match.line}
+                                          terms={terms}
+                                          phrases={phrases}
+                                          caseSensitive={caseSensitive}
+                                        />
+                                      </span>
+                                      <span className="text-[10px] text-zinc-800 group-hover/match:text-zinc-500 transition-colors shrink-0 px-2 py-0.5 self-center">→</span>
+                                    </div>
+                                    {/* Context after */}
+                                    {match.context_after.map((l, i) => (
+                                      <div key={`a${i}`} className="flex items-start gap-0">
+                                        <span className="text-zinc-800 w-10 text-right shrink-0 px-2 py-0.5 select-none tabular-nums">
+                                          {match.line_number + i + 1}
+                                        </span>
+                                        <span className="text-zinc-700 py-0.5 pr-3 whitespace-pre-wrap break-all">{l || " "}</span>
+                                      </div>
+                                    ))}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })() : selectedFile ? (
                 <>
                   <div className="flex items-center justify-between shrink-0">
-                    <span className="text-[11px] font-mono text-zinc-500">{selectedFile}</span>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[11px] font-mono text-zinc-500 truncate">{selectedFile}</span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(fileContent);
+                          setCopiedFile(true);
+                          setTimeout(() => setCopiedFile(false), 2000);
+                        }}
+                        className="shrink-0 text-zinc-700 hover:text-zinc-400 transition-colors"
+                        title="Copiar contenido"
+                      >
+                        {copiedFile ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {(fileExt(selectedFile) === "md" || fileHighlightLang(selectedFile)) && (
+                        filePreview ? (
+                          <>
+                            <button
+                              onClick={() => setFilePreview(false)}
+                              title="Editar"
+                              className="transition-colors"
+                            >
+                              <Pencil className="w-3.5 h-3.5 text-zinc-600 hover:text-zinc-300" />
+                            </button>
+                            {fileDirty && (
+                              <button
+                                onClick={saveFile}
+                                disabled={savingFile}
+                                title="Guardar"
+                                className="transition-colors disabled:opacity-30"
+                              >
+                                <Save className="w-3.5 h-3.5 text-amber-400 hover:text-amber-300" />
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => setFilePreview(true)}
+                              title="Volver al preview"
+                              className="transition-colors"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-zinc-600 hover:text-zinc-300" />
+                            </button>
+                            {fileDirty && (
+                              <button
+                                onClick={() => { setEditingContent(fileContent); setFilePreview(true); }}
+                                title="Descartar cambios"
+                                className="transition-colors"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5 text-amber-400 hover:text-amber-300" />
+                              </button>
+                            )}
+                            <button
+                              onClick={async () => { await saveFile(); setFilePreview(true); }}
+                              disabled={savingFile}
+                              title="Guardar"
+                              className="transition-colors disabled:opacity-30"
+                            >
+                              <Save className={`w-3.5 h-3.5 ${fileDirty ? "text-amber-400 hover:text-amber-300" : "text-zinc-600 hover:text-zinc-300"}`} />
+                            </button>
+                          </>
+                        )
+                      )}
                       <button
                         onClick={deleteFile}
                         disabled={deletingFile}
-                        className="text-[11px] font-mono text-red-500/50 hover:text-red-400 transition-colors disabled:opacity-30"
+                        title="Eliminar"
+                        className="transition-colors disabled:opacity-30"
                       >
-                        {deletingFile ? "eliminando···" : "eliminar"}
-                      </button>
-                      <button
-                        onClick={saveFile}
-                        disabled={savingFile || !fileDirty}
-                        className="text-xs font-mono text-amber-400 hover:text-amber-300 px-3 py-1 border border-amber-400/20 hover:border-amber-400/40 rounded-md transition-all disabled:opacity-30"
-                      >
-                        {savingFile ? "guardando···" : "guardar"}
+                        <Trash2 className="w-3.5 h-3.5 text-zinc-700 hover:text-red-400" />
                       </button>
                     </div>
                   </div>
@@ -848,8 +1230,19 @@ export default function KnowledgeAgentDetail() {
                     <div className="flex-1 flex items-center justify-center">
                       <span className="text-xs font-mono text-zinc-600 animate-pulse">cargando…</span>
                     </div>
+                  ) : filePreview && fileExt(selectedFile) === "md" ? (
+                    <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] px-4 py-4 text-zinc-300">
+                      <InfoMessage message={editingContent} />
+                    </div>
+                  ) : filePreview && fileHighlightLang(selectedFile) ? (
+                    <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.06] bg-zinc-900">
+                      <pre className="px-4 py-4 text-sm leading-relaxed overflow-x-auto">
+                        <code dangerouslySetInnerHTML={{ __html: hljs.highlight(editingContent, { language: fileHighlightLang(selectedFile)! }).value }} />
+                      </pre>
+                    </div>
                   ) : (
                     <textarea
+                      ref={textareaRef}
                       value={editingContent}
                       onChange={(e) => setEditingContent(e.target.value)}
                       className="flex-1 min-h-0 bg-zinc-900 border border-white/[0.06] rounded-xl px-4 py-4 text-sm text-zinc-300 font-mono leading-relaxed focus:outline-none focus:border-amber-400/20 resize-none"

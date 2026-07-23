@@ -128,3 +128,8 @@
     @apply font-sans;
   }
 }
+
+/* Override highlight.js theme background to match app */
+.hljs {
+  background: transparent;
+}

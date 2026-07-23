@@ -5,9 +5,9 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import type { Run } from "@/lib/api";
-import { LogStream } from "@/components/LogStream";
+import { LogStream, InfoMessage } from "@/components/LogStream";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Copy, Check, Download } from "lucide-react";
+import { Copy, Check, Download, Code } from "lucide-react";
 
 const STATUS_DOT: Record<string, string> = {
   pending:   "bg-zinc-500",
@@ -54,6 +54,7 @@ export default function RunDetail() {
   const [agentLink, setAgentLink] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [copiedOutput, setCopiedOutput] = useState(false);
+  const [rawOutput, setRawOutput] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -163,12 +164,6 @@ export default function RunDetail() {
                 <span>{(totalTokens / 1000).toFixed(1)}k tokens</span>
               </>
             )}
-            {run.cost_usd !== null && (
-              <>
-                <MetaDot />
-                <span>${run.cost_usd.toFixed(4)}</span>
-              </>
-            )}
           </div>
         </div>
 
@@ -215,16 +210,30 @@ export default function RunDetail() {
                 <span className="text-[11px] font-mono uppercase tracking-widest text-zinc-600">
                   {(run.output.length / 1000).toFixed(1)}k chars
                 </span>
-                <button
-                  onClick={copyOutput}
-                  className="flex items-center gap-1.5 text-xs font-mono text-zinc-600 hover:text-zinc-300 transition-colors"
-                >
-                  {copiedOutput ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                  {copiedOutput ? "copiado" : "copiar"}
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setRawOutput((v) => !v)}
+                    title={rawOutput ? "Ver formateado" : "Ver sin formato"}
+                    className={`flex items-center gap-1 text-xs font-mono transition-colors ${rawOutput ? "text-amber-400" : "text-zinc-600 hover:text-zinc-300"}`}
+                  >
+                    <Code className="w-3 h-3" />
+                    raw
+                  </button>
+                  <button
+                    onClick={copyOutput}
+                    className="flex items-center gap-1.5 text-xs font-mono text-zinc-600 hover:text-zinc-300 transition-colors"
+                  >
+                    {copiedOutput ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    {copiedOutput ? "copiado" : "copiar"}
+                  </button>
+                </div>
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto p-5">
-                <pre className="whitespace-pre-wrap text-sm text-zinc-300 font-mono leading-relaxed">{run.output}</pre>
+                {rawOutput ? (
+                  <pre className="whitespace-pre-wrap text-sm text-zinc-300 font-mono leading-relaxed">{run.output}</pre>
+                ) : (
+                  <InfoMessage message={run.output} />
+                )}
               </div>
             </div>
           ) : (

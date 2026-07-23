@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "highlight.js/styles/atom-one-dark.css";
 import Link from "next/link";
 import LogoutButton from "@/components/LogoutButton";
 
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/agents" className="px-2.5 py-1.5 text-zinc-500 hover:text-zinc-100 hover:bg-white/5 rounded-md transition-colors">Agentes</Link>
               <Link href="/schedules" className="px-2.5 py-1.5 text-zinc-500 hover:text-zinc-100 hover:bg-white/5 rounded-md transition-colors">Automatizaciones</Link>
               <Link href="/knowledge-agents" className="px-2.5 py-1.5 text-zinc-500 hover:text-zinc-100 hover:bg-white/5 rounded-md transition-colors">Conocimiento</Link>
+              <Link href="/harness" className="px-2.5 py-1.5 text-zinc-500 hover:text-zinc-100 hover:bg-white/5 rounded-md transition-colors">Harness</Link>
               <Link href="/settings" className="px-2.5 py-1.5 text-zinc-500 hover:text-zinc-100 hover:bg-white/5 rounded-md transition-colors">Configuración</Link>
             </div>
             <LogoutButton />

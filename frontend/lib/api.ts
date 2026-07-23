@@ -10,8 +10,19 @@ export interface Agent {
   max_tokens: number;
   timeout_seconds: number;
   is_builtin: boolean;
+  knowledge_agent_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentGenerated {
+  id: string;
+  name: string;
+  description: string;
+  system_prompt: string;
+  tools: string[];
+  model: string;
+  knowledge_agent_id: string | null;
 }
 
 export interface Run {
@@ -125,6 +136,19 @@ export interface KnowledgeFile {
   modified: number;
 }
 
+export interface SearchMatch {
+  line_number: number;
+  line: string;
+  context_before: string[];
+  context_after: string[];
+}
+
+export interface SearchResult {
+  file: string;
+  score: number;
+  matches: SearchMatch[];
+}
+
 export interface KnowledgeTool {
   name: string;
   description: string;
@@ -170,10 +194,37 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export type HarnessComponentType = "claude_md" | "rule" | "agent" | "skill" | "context" | "script";
+
+export interface HarnessComponentSummary {
+  name: string;
+  description: string | null;
+  modified_at: number;
+}
+
+export interface HarnessComponentDetail {
+  component_type: HarnessComponentType;
+  name: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  modified_at: number;
+}
+
+export interface HarnessListResponse {
+  claude_md: HarnessComponentSummary[];
+  rule: HarnessComponentSummary[];
+  agent: HarnessComponentSummary[];
+  skill: HarnessComponentSummary[];
+  context: HarnessComponentSummary[];
+  script: HarnessComponentSummary[];
+}
+
 export const api = {
   agents: {
     list: () => apiFetch<Agent[]>("/api/agents"),
     get: (id: string) => apiFetch<Agent>(`/api/agents/${id}`),
+    generate: (description: string) =>
+      apiFetch<AgentGenerated>("/api/agents/generate", { method: "POST", body: JSON.stringify({ description }) }),
     create: (data: Partial<Agent>) =>
       apiFetch<Agent>("/api/agents", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: Partial<Agent>) =>
@@ -216,6 +267,28 @@ export const api = {
       apiFetch<ApiKeyCreated>("/api/api-keys", { method: "POST", body: JSON.stringify({ name }) }),
     delete: (id: string) =>
       apiFetch<void>(`/api/api-keys/${id}`, { method: "DELETE" }),
+  },
+  harness: {
+    list: () => apiFetch<HarnessListResponse>("/api/harness"),
+    get: (type: HarnessComponentType, name: string) =>
+      apiFetch<HarnessComponentDetail>(`/api/harness/${type}/${name}`),
+    create: (type: HarnessComponentType, name: string, content: string) =>
+      apiFetch<HarnessComponentDetail>(`/api/harness/${type}`, {
+        method: "POST",
+        body: JSON.stringify({ name, content }),
+      }),
+    update: (type: HarnessComponentType, name: string, content: string) =>
+      apiFetch<HarnessComponentDetail>(`/api/harness/${type}/${name}`, {
+        method: "PUT",
+        body: JSON.stringify({ content }),
+      }),
+    delete: (type: HarnessComponentType, name: string) =>
+      apiFetch<void>(`/api/harness/${type}/${name}`, { method: "DELETE" }),
+    generate: (type: HarnessComponentType, description: string) =>
+      apiFetch<{ content: string }>("/api/harness/generate", {
+        method: "POST",
+        body: JSON.stringify({ component_type: type, description }),
+      }),
   },
   execute: (req: ExecuteRequest) =>
     apiFetch<ExecuteResponse | ExecuteAsyncResponse>("/api/execute", {
@@ -276,5 +349,7 @@ export const api = {
           ...(tools ? { tools } : {}),
         }),
       }),
+    search: (id: string, q: string) =>
+      apiFetch<SearchResult[]>(`/api/knowledge-agents/${id}/search?${new URLSearchParams({ q })}`),
   },
 };
