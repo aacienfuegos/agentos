@@ -68,7 +68,9 @@ def ensure_knowledge_dir(kb: KnowledgeBase) -> Path:
     return path
 
 
-def _build_system_prompt(kb: KnowledgeBase) -> str:
+def _build_system_prompt(kb: KnowledgeBase, mode: str = "chat") -> str:
+    # mode="chat"    → role (free_text or generic) + constraints + index + tree
+    # mode="context" → index + tree only, no role (for external agent consumption)
     instructions = kb.instructions or {}
     free_text = instructions.get("free_text", "").strip()
 
@@ -82,29 +84,42 @@ def _build_system_prompt(kb: KnowledgeBase) -> str:
     if instructions.get("readonly"):
         constraints.append("No modifiques ni crees ficheros sin confirmación explícita del usuario.")
 
-    base_parts: list[str] = [
-        f"Eres un asistente especializado en {kb.name}. "
-        "Responde usando la base de conocimiento disponible en tu directorio."
-    ]
-    if constraints:
-        base_parts.append("Instrucciones:\n" + "\n".join(f"- {c}" for c in constraints))
-    if free_text:
-        base_parts.append(free_text)
+    parts: list[str] = []
 
-    base = "\n\n".join(base_parts)
+    if mode == "chat":
+        if free_text:
+            parts.append(free_text)
+        else:
+            parts.append(
+                f"Eres un asistente especializado en {kb.name}. "
+                "Responde usando la base de conocimiento disponible en tu directorio."
+            )
+
+    if constraints:
+        parts.append("Instrucciones:\n" + "\n".join(f"- {c}" for c in constraints))
+
     path = Path(kb.knowledge_path)
     if not path.exists():
-        return base + f"\n\n**Aviso:** el directorio de conocimiento no existe: {kb.knowledge_path}"
+        if mode == "chat":
+            parts.append(f"**Aviso:** el directorio de conocimiento no existe: {kb.knowledge_path}")
+        return "\n\n".join(parts)
+
+    knowledge_index = path / "knowledge.md"
+    if knowledge_index.exists():
+        index_content = knowledge_index.read_text(encoding="utf-8").strip()
+        if index_content:
+            parts.append(f"## Índice de la base de conocimiento\n\n{index_content}")
 
     tree = _dir_tree(path)
-    return (
-        base
-        + f"\n\n## Base de conocimiento: {kb.name}\n\n"
+    parts.append(
+        f"## Base de conocimiento: {kb.name}\n\n"
         f"Directorio: `{kb.knowledge_path}`\n\n"
         f"Estructura actual:\n```\n{tree}\n```\n\n"
         f"Usa Read, Write, Edit, Grep y LS para explorar y actualizar los ficheros. "
         f"Las rutas relativas se resuelven desde el directorio raíz de la base de conocimiento."
     )
+
+    return "\n\n".join(parts)
 
 
 @dataclass
