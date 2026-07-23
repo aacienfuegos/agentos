@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { api, Run, Agent } from "@/lib/api";
+import { api, Run, Agent, KnowledgeAgent, KnowledgeConversation } from "@/lib/api";
 import { fmtTokens } from "@/lib/utils";
 import { ChevronRight, ChevronDown } from "lucide-react";
 
@@ -62,15 +62,15 @@ function dur(run: Run): string {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${s % 60}s`;
 }
 
-function canExpand(run: Run): boolean {
-  return run.status === "success" &&
-    !run.agent_id.startsWith("knowledge:") &&
-    run.agent_id !== "__execute__";
-}
+type TableItem =
+  | { kind: "run"; data: Run; sortKey: string }
+  | { kind: "conv"; data: KnowledgeConversation; sortKey: string };
 
 export default function RunsList() {
   const [runs, setRuns] = useState<Run[]>([]);
+  const [convs, setConvs] = useState<KnowledgeConversation[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [kaMap, setKaMap] = useState<Record<string, KnowledgeAgent>>({});
   const [statusFilter, setStatusFilter] = useState<Set<Run["status"]>>(new Set());
   const [agentFilter, setAgentFilter] = useState<string>("");
   const [page, setPage] = useState(0);
@@ -82,31 +82,41 @@ export default function RunsList() {
 
   const agentMap = Object.fromEntries(agents.map((a) => [a.id, a]));
 
-  const fetchRuns = useCallback(async (newPage: number, statuses: Set<Run["status"]>, agentId: string) => {
+  const fetchData = useCallback(async (newPage: number, statuses: Set<Run["status"]>, agentId: string) => {
     setLoading(true);
     try {
-      const result = await api.runs.list({
-        limit: PAGE_SIZE,
-        offset: newPage * PAGE_SIZE,
-        top_level: true,
-        ...(statuses.size > 0 ? { statuses: [...statuses] } : {}),
-        ...(agentId ? { agent_id: agentId } : {}),
-      });
-      setRuns(result);
-      setHasMore(result.length === PAGE_SIZE);
+      const [runsResult, convsResult] = await Promise.all([
+        api.runs.list({
+          limit: PAGE_SIZE,
+          offset: newPage * PAGE_SIZE,
+          top_level: true,
+          ...(statuses.size > 0 ? { statuses: [...statuses] } : {}),
+          ...(agentId ? { agent_id: agentId } : {}),
+        }),
+        agentId ? Promise.resolve([]) : api.runs.knowledgeConversations({ limit: PAGE_SIZE }),
+      ]);
+      setRuns(runsResult);
+      setConvs(convsResult);
+      setHasMore(runsResult.length === PAGE_SIZE);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    api.agents.list().then(setAgents);
+    Promise.all([
+      api.agents.list(),
+      api.knowledgeAgents.list(),
+    ]).then(([agList, kaList]) => {
+      setAgents(agList);
+      setKaMap(Object.fromEntries(kaList.map((ka) => [ka.id, ka])));
+    });
   }, []);
 
   useEffect(() => {
     setPage(0);
-    fetchRuns(0, statusFilter, agentFilter);
-  }, [statusFilter, agentFilter, fetchRuns]);
+    fetchData(0, statusFilter, agentFilter);
+  }, [statusFilter, agentFilter, fetchData]);
 
   const toggleStatus = (s: Run["status"]) => {
     setStatusFilter((prev) => {
@@ -116,25 +126,29 @@ export default function RunsList() {
     });
   };
 
-  const toggleExpand = async (runId: string) => {
+  const toggleExpand = async (key: string, fetchFn: () => Promise<Run[]>) => {
     setExpandedRuns((prev) => {
       const next = new Set(prev);
-      next.has(runId) ? next.delete(runId) : next.add(runId);
+      next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
-
-    if (childRuns[runId] !== undefined) return;
-
-    setLoadingChildren((prev) => new Set(prev).add(runId));
-    const children = await api.runs.list({ original_run_id: runId, limit: 100 });
-    setChildRuns((prev) => ({ ...prev, [runId]: children }));
-    setLoadingChildren((prev) => { const s = new Set(prev); s.delete(runId); return s; });
+    if (childRuns[key] !== undefined) return;
+    setLoadingChildren((prev) => new Set(prev).add(key));
+    const children = await fetchFn();
+    setChildRuns((prev) => ({ ...prev, [key]: children }));
+    setLoadingChildren((prev) => { const s = new Set(prev); s.delete(key); return s; });
   };
 
   const goToPage = (newPage: number) => {
     setPage(newPage);
-    fetchRuns(newPage, statusFilter, agentFilter);
+    fetchData(newPage, statusFilter, agentFilter);
   };
+
+  // Merge runs and conversations sorted by most recent activity
+  const items: TableItem[] = [
+    ...runs.map((r): TableItem => ({ kind: "run", data: r, sortKey: r.created_at })),
+    ...(!agentFilter ? convs.map((c): TableItem => ({ kind: "conv", data: c, sortKey: c.last_at })) : []),
+  ].sort((a, b) => b.sortKey.localeCompare(a.sortKey));
 
   return (
     <div className="space-y-4">
@@ -183,39 +197,143 @@ export default function RunsList() {
             </tr>
           </thead>
           <tbody>
-            {loading && runs.length === 0 ? (
+            {loading && items.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-10 text-center text-xs font-mono text-zinc-700">
                   cargando…
                 </td>
               </tr>
-            ) : runs.length === 0 ? (
+            ) : items.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-10 text-center text-xs font-mono text-zinc-700">
                   — sin ejecuciones —
                 </td>
               </tr>
             ) : (
-              runs.map((run, i) => {
+              items.map((item, i) => {
+                const isLast = i === items.length - 1;
+
+                if (item.kind === "conv") {
+                  const conv = item.data;
+                  const kaName = kaMap[conv.knowledge_agent_id]?.name ?? conv.knowledge_agent_id;
+                  const key = `conv:${conv.conversation_id}`;
+                  const isExpanded = expandedRuns.has(key);
+                  const children = childRuns[key];
+                  const isLastWithExpanded = isLast && !isExpanded;
+
+                  return [
+                    <tr
+                      key={key}
+                      className={`border-b border-white/[0.03] hover:bg-white/[0.03] transition-colors ${isLastWithExpanded ? "border-b-0" : ""}`}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => toggleExpand(key, () => api.runs.list({ conversation_id: conv.conversation_id, limit: 100 }))}
+                            className="shrink-0 text-zinc-600 hover:text-zinc-300 transition-colors"
+                          >
+                            {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                          </button>
+                          <Link
+                            href={`/knowledge-agents/${conv.knowledge_agent_id}?conv=${conv.conversation_id}`}
+                            className="text-zinc-300 hover:text-amber-400 transition-colors font-medium"
+                          >
+                            <span className="text-zinc-600 font-normal">Knowledge · </span>{kaName}
+                          </Link>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-xs font-mono text-zinc-600">{conv.turn_count} turnos</span>
+                      </td>
+                      <td className="px-4 py-3 text-zinc-600 font-mono text-xs hidden sm:table-cell">
+                        {fmt(conv.first_at)}
+                      </td>
+                      <td className="px-4 py-3 text-zinc-600 font-mono text-xs">
+                        {fmt(conv.last_at).split(",")[1]?.trim() ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 hidden md:table-cell" />
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        <span className="inline-block px-2 py-0.5 rounded text-[11px] font-mono border bg-teal-500/10 text-teal-400 border-teal-500/20">
+                          knowledge
+                        </span>
+                      </td>
+                    </tr>,
+
+                    isExpanded && (
+                      loadingChildren.has(key) ? (
+                        <tr key={`${key}-loading`} className="border-b border-white/[0.03]">
+                          <td colSpan={6} className="pl-10 py-2 text-[11px] font-mono text-zinc-700">cargando···</td>
+                        </tr>
+                      ) : children?.length === 0 ? (
+                        <tr key={`${key}-empty`} className={`border-b border-white/[0.03] ${isLast ? "border-b-0" : ""}`}>
+                          <td colSpan={6} className="pl-10 py-2 text-[11px] font-mono text-zinc-700">— sin runs —</td>
+                        </tr>
+                      ) : (
+                        children?.map((child, ci) => {
+                          const isLastChild = ci === (children?.length ?? 0) - 1 && isLast;
+                          const userMsg = String((child.input_params as Record<string, unknown>).user_message ?? "").slice(0, 60);
+                          return (
+                            <tr
+                              key={child.id}
+                              className={`border-b border-white/[0.03] bg-white/[0.01] hover:bg-white/[0.03] transition-colors ${isLastChild ? "border-b-0" : ""}`}
+                            >
+                              <td className="pl-9 pr-4 py-2">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-zinc-800 font-mono text-xs shrink-0">└</span>
+                                  <Link
+                                    href={`/runs/${child.id}`}
+                                    className="text-zinc-500 hover:text-amber-400 transition-colors text-xs font-mono truncate max-w-[200px]"
+                                    title={userMsg}
+                                  >
+                                    {userMsg || child.id.slice(0, 8)}
+                                  </Link>
+                                </div>
+                              </td>
+                              <td className="px-4 py-2">
+                                <span className="flex items-center gap-1.5">
+                                  <span className={`w-1 h-1 rounded-full shrink-0 ${STATUS_DOT[child.status]}`} />
+                                  <span className={`text-[11px] font-mono ${STATUS_TEXT[child.status]}`}>
+                                    {STATUS_LABEL[child.status] ?? child.status}
+                                  </span>
+                                </span>
+                              </td>
+                              <td className="px-4 py-2 text-zinc-700 font-mono text-[11px] hidden sm:table-cell">{fmt(child.started_at ?? child.created_at)}</td>
+                              <td className="px-4 py-2 text-zinc-700 font-mono text-[11px]">{dur(child)}</td>
+                              <td className="px-4 py-2 text-zinc-700 font-mono text-[11px] hidden md:table-cell">
+                                {child.tokens_input !== null && child.tokens_output !== null
+                                  ? fmtTokens(child.tokens_input + child.tokens_output)
+                                  : "—"}
+                              </td>
+                              <td className="px-4 py-2 hidden lg:table-cell">
+                                <TriggeredByBadge value={child.triggered_by} />
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )
+                    ),
+                  ];
+                }
+
+                // Regular run row
+                const run = item.data;
                 const isExpanded = expandedRuns.has(run.id);
-                const isLast = i === runs.length - 1 && !isExpanded;
+                const isLastRow = isLast && !isExpanded;
                 const children = childRuns[run.id];
 
                 return [
                   <tr
                     key={run.id}
-                    className={`border-b border-white/[0.03] hover:bg-white/[0.03] transition-colors ${isLast ? "border-b-0" : ""}`}
+                    className={`border-b border-white/[0.03] hover:bg-white/[0.03] transition-colors ${isLastRow ? "border-b-0" : ""}`}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
-                        {canExpand(run) ? (
+                        {run.status === "success" && run.agent_id !== "__execute__" ? (
                           <button
-                            onClick={() => toggleExpand(run.id)}
+                            onClick={() => toggleExpand(run.id, () => api.runs.list({ original_run_id: run.id, limit: 50 }))}
                             className="shrink-0 text-zinc-600 hover:text-zinc-300 transition-colors"
                           >
-                            {isExpanded
-                              ? <ChevronDown className="w-3.5 h-3.5" />
-                              : <ChevronRight className="w-3.5 h-3.5" />}
+                            {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                           </button>
                         ) : (
                           <span className="w-3.5 shrink-0" />
@@ -238,9 +356,7 @@ export default function RunsList() {
                         </span>
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-zinc-600 font-mono text-xs hidden sm:table-cell">
-                      {fmt(run.started_at ?? run.created_at)}
-                    </td>
+                    <td className="px-4 py-3 text-zinc-600 font-mono text-xs hidden sm:table-cell">{fmt(run.started_at ?? run.created_at)}</td>
                     <td className="px-4 py-3 text-zinc-600 font-mono text-xs">{dur(run)}</td>
                     <td className="px-4 py-3 text-zinc-600 font-mono text-xs hidden md:table-cell">
                       {run.tokens_input !== null && run.tokens_output !== null
@@ -252,19 +368,14 @@ export default function RunsList() {
                     </td>
                   </tr>,
 
-                  // Child rows
                   isExpanded && (
                     loadingChildren.has(run.id) ? (
                       <tr key={`${run.id}-loading`} className="border-b border-white/[0.03]">
-                        <td colSpan={6} className="pl-10 py-2 text-[11px] font-mono text-zinc-700">
-                          cargando···
-                        </td>
+                        <td colSpan={6} className="pl-10 py-2 text-[11px] font-mono text-zinc-700">cargando···</td>
                       </tr>
                     ) : children?.length === 0 ? (
                       <tr key={`${run.id}-empty`} className={`border-b border-white/[0.03] ${isLast ? "border-b-0" : ""}`}>
-                        <td colSpan={6} className="pl-10 py-2 text-[11px] font-mono text-zinc-700">
-                          — sin chats —
-                        </td>
+                        <td colSpan={6} className="pl-10 py-2 text-[11px] font-mono text-zinc-700">— sin chats —</td>
                       </tr>
                     ) : (
                       children?.map((child, ci) => {
@@ -295,9 +406,7 @@ export default function RunsList() {
                                 </span>
                               </span>
                             </td>
-                            <td className="px-4 py-2 text-zinc-700 font-mono text-[11px] hidden sm:table-cell">
-                              {fmt(child.started_at ?? child.created_at)}
-                            </td>
+                            <td className="px-4 py-2 text-zinc-700 font-mono text-[11px] hidden sm:table-cell">{fmt(child.started_at ?? child.created_at)}</td>
                             <td className="px-4 py-2 text-zinc-700 font-mono text-[11px]">{dur(child)}</td>
                             <td className="px-4 py-2 text-zinc-700 font-mono text-[11px] hidden md:table-cell">
                               {child.tokens_input !== null && child.tokens_output !== null

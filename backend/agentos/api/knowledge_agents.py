@@ -12,6 +12,7 @@ from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from ..config import settings
@@ -506,10 +507,24 @@ async def query_knowledge_agent(
     if data.tools is not None:
         input_params["tools"] = data.tools
 
+    triggered_by = "manual"
+    if data.conversation_id:
+        first_run = session.exec(
+            select(Run)
+            .where(
+                func.json_extract(Run.input_params, "$.conversation_id") == data.conversation_id
+            )
+            .order_by(Run.created_at)
+            .limit(1)
+        ).first()
+        if first_run:
+            triggered_by = "chat"
+            input_params["original_run_id"] = first_run.id
+
     run = Run(
         agent_id=f"knowledge:{agent_id}",
         input_params=input_params,
-        triggered_by="manual",
+        triggered_by=triggered_by,
         status=RunStatus.pending,
     )
     session.add(run)

@@ -20,6 +20,14 @@ class RunCreate(BaseModel):
     input_params: dict[str, Any] = {}
 
 
+class KnowledgeConversationSummary(BaseModel):
+    conversation_id: str
+    knowledge_agent_id: str
+    turn_count: int
+    first_at: str
+    last_at: str
+
+
 def _redis_settings() -> RedisSettings:
     return RedisSettings.from_dsn(settings.redis_url)
 
@@ -32,6 +40,7 @@ def list_runs(
     limit: int = Query(default=50, le=200),
     offset: int = 0,
     original_run_id: str | None = None,
+    conversation_id: str | None = None,
     top_level: bool = False,
 ) -> list[Run]:
     query = select(Run).order_by(Run.created_at.desc()).offset(offset).limit(limit)
@@ -43,9 +52,49 @@ def list_runs(
         query = query.where(
             func.json_extract(Run.input_params, "$.original_run_id") == original_run_id
         )
+    if conversation_id:
+        query = query.where(
+            func.json_extract(Run.input_params, "$.conversation_id") == conversation_id
+        )
     if top_level:
         query = query.where(Run.triggered_by != "chat")
+        query = query.where(~Run.agent_id.like("knowledge:%"))
     return session.exec(query).all()
+
+
+@router.get("/knowledge-conversations")
+def list_knowledge_conversations(
+    session: SessionDep,
+    limit: int = Query(default=50, le=200),
+    offset: int = 0,
+) -> list[KnowledgeConversationSummary]:
+    conv_id_expr = func.json_extract(Run.input_params, "$.conversation_id")
+    stmt = (
+        select(
+            conv_id_expr.label("conversation_id"),
+            Run.agent_id,
+            func.count().label("turn_count"),
+            func.min(Run.created_at).label("first_at"),
+            func.max(Run.created_at).label("last_at"),
+        )
+        .where(Run.agent_id.like("knowledge:%"))
+        .where(conv_id_expr.is_not(None))
+        .group_by(conv_id_expr)
+        .order_by(func.max(Run.created_at).desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = session.execute(stmt).mappings().all()
+    return [
+        KnowledgeConversationSummary(
+            conversation_id=row["conversation_id"],
+            knowledge_agent_id=row["agent_id"].split(":", 1)[1],
+            turn_count=row["turn_count"],
+            first_at=str(row["first_at"]),
+            last_at=str(row["last_at"]),
+        )
+        for row in rows
+    ]
 
 
 @router.post("", status_code=201)
