@@ -60,9 +60,14 @@ def ensure_knowledge_dir(kb: KnowledgeBase) -> Path:
     stub = path / "knowledge.md"
     if not any(path.iterdir()):
         stub.write_text(
-            f"# {kb.name}\n\n"
-            f"{kb.description or 'Base de conocimiento.'}\n\n"
-            f"<!-- Añade aquí la información que quieras que recuerde el agente. -->\n",
+            f"# Índice — {kb.name}\n\n"
+            f"{kb.description or ''}\n\n"
+            "```\n"
+            "# Añade aquí el índice de ficheros con una línea descriptiva por cada uno.\n"
+            "# Ejemplo:\n"
+            "# notas.md   → Notas generales\n"
+            "# datos/     → Subcarpeta con datos estructurados\n"
+            "```\n",
             encoding="utf-8",
         )
     return path
