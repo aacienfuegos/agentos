@@ -101,6 +101,8 @@ async def create_run(run: RunCreate, session: SessionDep) -> Run:
     agent = session.get(AgentDefinition, run.agent_id)
     if not agent:
         raise HTTPException(404, "Agent not found")
+    if agent.id == "infra-architect" and not settings.infra_agents_enabled:
+        raise HTTPException(403, "Infra agents are disabled (INFRA_AGENTS_ENABLED=false)")
 
     has_conversation = "conversation_id" in run.input_params
     run_type = "chat" if has_conversation else "agent"

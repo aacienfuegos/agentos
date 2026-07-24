@@ -67,3 +67,31 @@ def test_create_run_success(app_client: TestClient):
     assert data["status"] == "pending"
     # Verify the background job was enqueued
     mock_pool.enqueue_job.assert_awaited_once()
+
+
+def test_create_run_infra_architect_disabled(app_client: TestClient):
+    """POST /api/runs for infra-architect must 403 when INFRA_AGENTS_ENABLED=false,
+    even if the agent row already exists (e.g. seeded while the flag was true)."""
+    resp = app_client.post(
+        "/api/agents",
+        json={
+            "id": "infra-architect",
+            "name": "Infra Architect",
+            "description": "desc",
+            "system_prompt": "Eres un arquitecto de infraestructura en modo solo lectura.",
+        },
+    )
+    assert resp.status_code == 201
+
+    mock_pool = AsyncMock()
+    mock_pool.enqueue_job = AsyncMock()
+    mock_pool.aclose = AsyncMock()
+
+    with patch("agentos.api.runs.create_pool", return_value=mock_pool):
+        response = app_client.post(
+            "/api/runs",
+            json={"agent_id": "infra-architect", "input_params": {}},
+        )
+
+    assert response.status_code == 403
+    mock_pool.enqueue_job.assert_not_awaited()

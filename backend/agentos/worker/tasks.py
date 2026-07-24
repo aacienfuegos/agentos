@@ -76,6 +76,13 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
             session.commit()
             return
 
+        if agent.id == "infra-architect" and not settings.infra_agents_enabled:
+            run.status = RunStatus.failed
+            run.error = "Infra agents are disabled (INFRA_AGENTS_ENABLED=false)"
+            session.add(run)
+            session.commit()
+            return
+
         run.status = RunStatus.running
         run.started_at = datetime.utcnow()
         session.add(run)
