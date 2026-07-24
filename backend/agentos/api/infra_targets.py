@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from ..database import get_session
@@ -13,20 +13,20 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 
 class InfraTargetCreate(BaseModel):
-    id: str
-    name: str
-    host: str
-    ssh_user: str
-    ssh_port: int = 22
-    notes: str = ""
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    name: str = Field(min_length=1, max_length=200)
+    host: str = Field(min_length=1, max_length=255)
+    ssh_user: str = Field(min_length=1, max_length=64)
+    ssh_port: int = Field(default=22, ge=1, le=65535)
+    notes: str = Field(default="", max_length=2000)
 
 
 class InfraTargetUpdate(BaseModel):
-    name: str | None = None
-    host: str | None = None
-    ssh_user: str | None = None
-    ssh_port: int | None = None
-    notes: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    host: str | None = Field(default=None, min_length=1, max_length=255)
+    ssh_user: str | None = Field(default=None, min_length=1, max_length=64)
+    ssh_port: int | None = Field(default=None, ge=1, le=65535)
+    notes: str | None = Field(default=None, max_length=2000)
 
 
 @router.get("")

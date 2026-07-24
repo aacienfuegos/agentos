@@ -90,3 +90,27 @@ def test_delete_infra_target(app_client: TestClient):
 def test_delete_infra_target_not_found(app_client: TestClient):
     response = app_client.delete("/api/infra-targets/nonexistent")
     assert response.status_code == 404
+
+
+def test_create_infra_target_invalid_port(app_client: TestClient):
+    payload = {**TARGET_PAYLOAD, "ssh_port": 70000}
+    response = app_client.post("/api/infra-targets", json=payload)
+    assert response.status_code == 422
+
+
+def test_create_infra_target_invalid_id(app_client: TestClient):
+    payload = {**TARGET_PAYLOAD, "id": "Not A Valid Slug!"}
+    response = app_client.post("/api/infra-targets", json=payload)
+    assert response.status_code == 422
+
+
+def test_create_infra_target_empty_host(app_client: TestClient):
+    payload = {**TARGET_PAYLOAD, "host": ""}
+    response = app_client.post("/api/infra-targets", json=payload)
+    assert response.status_code == 422
+
+
+def test_update_infra_target_invalid_port(app_client: TestClient):
+    app_client.post("/api/infra-targets", json=TARGET_PAYLOAD)
+    response = app_client.put("/api/infra-targets/test-target", json={"ssh_port": 0})
+    assert response.status_code == 422

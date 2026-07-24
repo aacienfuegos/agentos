@@ -172,7 +172,7 @@ export default function InfraTargetsPage() {
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-violet-500"
                   placeholder="ej: homelab-dev"
                   value={form.id}
-                  onChange={(e) => setForm((f) => ({ ...f, id: e.target.value }))}
+                  onChange={(e) => setForm((f) => ({ ...f, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") }))}
                 />
               </div>
             )}
@@ -198,6 +198,9 @@ export default function InfraTargetsPage() {
               <div className="space-y-1.5">
                 <Label className="text-zinc-300 text-sm">Puerto</Label>
                 <input
+                  type="number"
+                  min={1}
+                  max={65535}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-violet-500"
                   value={form.ssh_port}
                   onChange={(e) => setForm((f) => ({ ...f, ssh_port: e.target.value }))}
