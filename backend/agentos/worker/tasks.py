@@ -7,7 +7,7 @@ from sqlmodel import Session
 
 from ..config import settings
 from ..database import engine
-from ..models import Run, RunStatus, AgentDefinition, KnowledgeBase
+from ..models import Run, RunStatus, AgentDefinition, KnowledgeBase, InfraTarget
 from ..runner.claude_code import ClaudeCodeRunner
 from ..runner.knowledge import KnowledgeRunner
 from ..tools.notifications import send_notification
@@ -95,6 +95,20 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
                 agent.system_prompt = knowledge_ctx + "\n\n---\n\n" + agent.system_prompt
                 ka_cwd = kb.knowledge_path
                 session.expunge(kb)
+
+        # Inject the concrete InfraTarget connection details for infra-architect
+        # runs, so it diagnoses the target the caller picked instead of the
+        # fixed example alias hardcoded in its own system prompt.
+        target_id: str | None = run.input_params.get("target_id")
+        if not resume_session_id and target_id and agent.id == "infra-architect":
+            target = session.get(InfraTarget, target_id)
+            if target:
+                target_ctx = (
+                    f"## InfraTarget: {target.name} (id: {target.id})\n"
+                    f"Conéctate con: `ssh -p {target.ssh_port} {target.ssh_user}@{target.host} <comando>`\n"
+                    f"Notas: {target.notes or '(sin notas)'}\n"
+                )
+                agent.system_prompt = target_ctx + "\n---\n\n" + agent.system_prompt
 
         # Detach before session closes so attributes remain accessible after expiry
         session.expunge(run)

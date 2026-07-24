@@ -27,7 +27,7 @@ import agentos.runner.claude_code as _runner_module
 _tasks_module.engine = _ENGINE
 _runner_module.engine = _ENGINE
 
-from agentos.models import AgentDefinition, KnowledgeBase, Run, RunStatus
+from agentos.models import AgentDefinition, InfraTarget, KnowledgeBase, Run, RunStatus
 from agentos.runner.claude_code import RunResult
 from agentos.worker.tasks import run_agent_task
 
@@ -160,6 +160,87 @@ async def test_run_agent_task_kb_context_injected(db_session, tmp_path):
     assert "asistente especializado" not in prompt
     assert "---" in prompt
     assert captured["cwd"] == str(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_run_agent_task_infra_target_context_injected(db_session):
+    """infra-architect run with target_id gets concrete SSH details prepended."""
+    target = InfraTarget(
+        id="homelab-dev",
+        name="Homelab Dev",
+        host="homelab-dev.internal",
+        ssh_user="agentos",
+        ssh_port=2222,
+        notes="Nodo de pruebas",
+    )
+    db_session.add(target)
+
+    agent = AgentDefinition(
+        id="infra-architect",
+        name="Infra Architect",
+        description="desc",
+        system_prompt="Eres un arquitecto de infraestructura en modo solo lectura.",
+        tools=["Bash", "Read"],
+        model="claude-sonnet-4-6",
+        timeout_seconds=30,
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    run = Run(agent_id="infra-architect", input_params={"target_id": "homelab-dev"})
+    db_session.add(run)
+    db_session.commit()
+    run_id = run.id
+
+    captured: dict = {}
+
+    async def _fake_run(self, run, agent_def, **kwargs):
+        captured["system_prompt"] = agent_def.system_prompt
+        return RunResult(output="ok", tokens_input=1, tokens_output=1)
+
+    with (
+        patch.object(_tasks_module.ClaudeCodeRunner, "run", new=_fake_run),
+        patch("agentos.worker.tasks.send_notification", new=AsyncMock()),
+    ):
+        await run_agent_task({}, run_id)
+
+    prompt = captured["system_prompt"]
+    assert "## InfraTarget: Homelab Dev" in prompt
+    assert "ssh -p 2222 agentos@homelab-dev.internal" in prompt
+    assert "Nodo de pruebas" in prompt
+    assert "Eres un arquitecto de infraestructura" in prompt
+
+
+@pytest.mark.asyncio
+async def test_run_agent_task_infra_target_missing_is_ignored(db_session):
+    """Unknown target_id falls back silently to the agent's own system prompt."""
+    agent = AgentDefinition(
+        id="infra-architect",
+        name="Infra Architect",
+        description="desc",
+        system_prompt="Eres un arquitecto de infraestructura en modo solo lectura.",
+        tools=["Bash", "Read"],
+        model="claude-sonnet-4-6",
+        timeout_seconds=30,
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    run = Run(agent_id="infra-architect", input_params={"target_id": "ghost-target"})
+    db_session.add(run)
+    db_session.commit()
+    run_id = run.id
+
+    mock_result = RunResult(output="ok", tokens_input=1, tokens_output=1)
+    with (
+        patch.object(_tasks_module.ClaudeCodeRunner, "run", new=AsyncMock(return_value=mock_result)),
+        patch("agentos.worker.tasks.send_notification", new=AsyncMock()),
+    ):
+        await run_agent_task({}, run_id)
+
+    with Session(_ENGINE) as s:
+        finished = s.get(Run, run_id)
+        assert finished.status == RunStatus.success
 
 
 @pytest.mark.asyncio
