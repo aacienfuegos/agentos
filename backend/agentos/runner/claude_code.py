@@ -11,6 +11,15 @@ from ..database import engine
 from ..models import LogEntry
 
 
+def _build_user_message(input_params: dict, agent_id: str = "") -> str:
+    from ..agents.portfolio_updater import build_portfolio_message
+    if agent_id == "portfolio-updater":
+        return build_portfolio_message(input_params)
+    if "user_message" in input_params:
+        return input_params["user_message"]
+    return json.dumps(input_params, ensure_ascii=False)
+
+
 @dataclass
 class RunResult:
     output: str
@@ -44,7 +53,7 @@ class ClaudeCodeRunner:
             else None
         )
 
-        user_message = self._build_user_message(run.input_params, agent.id)
+        user_message = _build_user_message(run.input_params, agent.id)
         if not resume_id and initial_context:
             user_message = f"Contexto del run anterior:\n\n{initial_context}\n\n---\n\n{user_message}"
 
@@ -198,11 +207,3 @@ class ClaudeCodeRunner:
         home = os.path.expanduser("~")
         session_path = os.path.join(home, ".claude", "projects", cwd_hash, f"{session_id}.jsonl")
         return os.path.isfile(session_path)
-
-    def _build_user_message(self, input_params: dict, agent_id: str = "") -> str:
-        from ..agents.portfolio_updater import build_portfolio_message
-        if agent_id == "portfolio-updater":
-            return build_portfolio_message(input_params)
-        if "user_message" in input_params:
-            return input_params["user_message"]
-        return json.dumps(input_params, ensure_ascii=False)

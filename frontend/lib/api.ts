@@ -238,6 +238,13 @@ export const api = {
       apiFetch<Agent>(`/api/agents/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (id: string) =>
       apiFetch<void>(`/api/agents/${id}`, { method: "DELETE" }),
+    previewPrompt: (id: string) =>
+      apiFetch<{ system_prompt: string }>(`/api/agents/${id}/preview-prompt`),
+    previewFullPrompt: (id: string, inputParams: Record<string, unknown>) =>
+      apiFetch<{ system_prompt: string; user_message: string }>(`/api/agents/${id}/preview-prompt`, {
+        method: "POST",
+        body: JSON.stringify({ input_params: inputParams }),
+      }),
   },
   runs: {
     list: (params?: { agent_id?: string; statuses?: string[]; limit?: number; offset?: number; original_run_id?: string; conversation_id?: string; top_level?: boolean }) => {
