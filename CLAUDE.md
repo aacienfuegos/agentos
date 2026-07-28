@@ -176,9 +176,13 @@ en `log_entries`. Tokens y coste se extraen del evento `result` final.
 
 ## Estado actual del desarrollo
 
-**Última sesión activa:** 2026-07-24 — auditoría de discrepancias entre issues de GitHub y el estado real de `main`/`develop`.
+**Última sesión activa:** 2026-07-28 — TOFU host-key pinning para `infra-architect` (#219), rama `feat/infra-agents-issue-219` sin PR abierta todavía (pendiente de más validación antes de mandarla a `develop`).
 
 > **Gotcha detectado:** un PR con `Closes #N` solo auto-cierra el issue si se mergea en la *default branch* del repo (`main`). Como el flujo real es `feat → develop → main` en dos PRs separados, el cierre automático nunca se dispara al mergear a `develop`, y si la promoción `develop → main` se hace con un merge commit sin closing keyword, el issue se queda abierto aunque el código ya esté en producción. Revisar periódicamente con `git log main` vs `gh issue list --state open`.
+
+> **Gotcha detectado (Alembic vs. `create_db_and_tables()`):** `main.py` llama a `create_db_and_tables()` (`SQLModel.metadata.create_all(engine)`) en el `lifespan` de FastAPI en **todo** arranque del backend, incluido `uv run uvicorn --reload` en local sin Docker. `create_all()` solo crea tablas que no existen — nunca añade columnas nuevas a una tabla ya existente. En Docker esto no es un problema porque `entrypoint.sh` corre `alembic upgrade head` *antes* de arrancar el proceso, así que cuando `create_db_and_tables()` se ejecuta la tabla ya tiene las columnas nuevas (no-op). Pero si desarrollas con el backend nativo (`cd backend && uv run uvicorn agentos.main:app --reload`) contra un `agentos.db` local ya existente, y añades un campo a un modelo SQLModel con su migración Alembic correspondiente, el arranque **no falla y no avisa** — simplemente el esquema se queda desactualizado hasta que corras `uv run alembic upgrade head` a mano. Señal de alarma: `OperationalError: no such column` la primera vez que el código toca el campo nuevo.
+
+> **Gotcha detectado (mount de `alembic/` asimétrico en dev):** `docker-compose.dev.yml` monta `./backend/alembic:/app/alembic` en `backend` pero no lo montaba en `worker` (corregido en la rama `feat/infra-agents-issue-219`, commit de esta sesión). Como `entrypoint.sh` corre `alembic upgrade head` en el arranque de **ambos** contenedores (mismo Dockerfile, distinto `command`), un `worker` sin ese mount solo ve las migraciones que existían cuando se construyó su imagen. Añadir una migración nueva sin reconstruir la imagen del worker provoca `FAILED: Can't locate revision identified by '<rev>'` en su próximo restart — y como `entrypoint.sh` usa `set -e`, el contenedor no llega a arrancar (bucle de reinicio con `restart: unless-stopped`). Si en el futuro se toca este fichero, mantener los mounts de `backend` y `worker` en paralelo.
 
 ### Batch pendiente de promoción `develop → main`
 

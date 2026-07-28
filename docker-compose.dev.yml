@@ -59,6 +59,7 @@ services:
       - INFRA_AGENTS_ENABLED=${INFRA_AGENTS_ENABLED:-false}
     volumes:
       - ./backend/agentos:/app/agentos
+      - ./backend/alembic:/app/alembic   # migraciones disponibles en dev (mismo motivo que backend)
       - backend_data:/data
       - ./agents_config:/app/agents_config
       - /var/run/docker.sock:/var/run/docker.sock
