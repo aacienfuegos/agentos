@@ -1,4 +1,7 @@
 """Tests for /api/infra-targets CRUD endpoints."""
+import asyncio
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 
 
@@ -114,3 +117,78 @@ def test_update_infra_target_invalid_port(app_client: TestClient):
     app_client.post("/api/infra-targets", json=TARGET_PAYLOAD)
     response = app_client.put("/api/infra-targets/test-target", json={"ssh_port": 0})
     assert response.status_code == 422
+
+
+class _FakeProc:
+    def __init__(self, stdout: bytes, stderr: bytes = b""):
+        self._stdout = stdout
+        self._stderr = stderr
+
+    async def communicate(self, input: bytes | None = None):
+        return self._stdout, self._stderr
+
+
+def _fake_subprocess_exec(keyscan_stdout: bytes, keyscan_stderr: bytes = b""):
+    async def _run(*args, **kwargs):
+        if args[0] == "ssh-keyscan":
+            return _FakeProc(keyscan_stdout, keyscan_stderr)
+        if args[0] == "ssh-keygen":
+            return _FakeProc(b"256 SHA256:testfingerprint test-target.internal (ED25519)\n")
+        raise AssertionError(f"unexpected subprocess exec: {args}")
+    return _run
+
+
+def test_verify_host_not_found(app_client: TestClient):
+    response = app_client.post("/api/infra-targets/nonexistent/verify-host")
+    assert response.status_code == 404
+
+
+def test_verify_host_success(app_client: TestClient):
+    app_client.post("/api/infra-targets", json=TARGET_PAYLOAD)
+
+    keyscan_line = b"test-target.internal ssh-ed25519 AAAAtest\n"
+    with patch(
+        "agentos.api.infra_targets.asyncio.create_subprocess_exec",
+        side_effect=_fake_subprocess_exec(keyscan_line),
+    ):
+        response = app_client.post("/api/infra-targets/test-target/verify-host")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["known_hosts_entry"] == keyscan_line.decode().strip()
+    assert data["host_key_fingerprint"] == "256 SHA256:testfingerprint test-target.internal (ED25519)"
+
+    # Persisted, not just returned in the response
+    get_resp = app_client.get("/api/infra-targets/test-target")
+    assert get_resp.json()["host_key_fingerprint"] == data["host_key_fingerprint"]
+
+
+def test_verify_host_no_response(app_client: TestClient):
+    """ssh-keyscan returning nothing (host unreachable/closed port) must 502, not
+    silently store an empty known_hosts entry."""
+    app_client.post("/api/infra-targets", json=TARGET_PAYLOAD)
+
+    with patch(
+        "agentos.api.infra_targets.asyncio.create_subprocess_exec",
+        side_effect=_fake_subprocess_exec(b"", b"connection refused"),
+    ):
+        response = app_client.post("/api/infra-targets/test-target/verify-host")
+
+    assert response.status_code == 502
+    get_resp = app_client.get("/api/infra-targets/test-target")
+    assert get_resp.json()["known_hosts_entry"] is None
+
+
+def test_verify_host_timeout(app_client: TestClient):
+    app_client.post("/api/infra-targets", json=TARGET_PAYLOAD)
+
+    async def _hang(*args, **kwargs):
+        raise asyncio.TimeoutError
+
+    with (
+        patch("agentos.api.infra_targets.asyncio.create_subprocess_exec", side_effect=_fake_subprocess_exec(b"x")),
+        patch("agentos.api.infra_targets.asyncio.wait_for", side_effect=_hang),
+    ):
+        response = app_client.post("/api/infra-targets/test-target/verify-host")
+
+    assert response.status_code == 504

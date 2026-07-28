@@ -5,7 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from agentos.models import AgentDefinition
+import agentos.api.runs as _runs_module
+from agentos.models import AgentDefinition, InfraTarget
 
 
 AGENT_PAYLOAD = {
@@ -95,3 +96,100 @@ def test_create_run_infra_architect_disabled(app_client: TestClient):
 
     assert response.status_code == 403
     mock_pool.enqueue_job.assert_not_awaited()
+
+
+def _create_infra_architect(client: TestClient) -> None:
+    resp = client.post(
+        "/api/agents",
+        json={
+            "id": "infra-architect",
+            "name": "Infra Architect",
+            "description": "desc",
+            "system_prompt": "Eres un arquitecto de infraestructura en modo solo lectura.",
+        },
+    )
+    assert resp.status_code == 201
+
+
+def test_create_run_infra_architect_target_not_found(app_client: TestClient):
+    """target_id pointing at a nonexistent InfraTarget must 404, not silently run."""
+    _create_infra_architect(app_client)
+
+    mock_pool = AsyncMock()
+    mock_pool.enqueue_job = AsyncMock()
+    mock_pool.aclose = AsyncMock()
+
+    with (
+        patch.object(_runs_module.settings, "infra_agents_enabled", True),
+        patch("agentos.api.runs.create_pool", return_value=mock_pool),
+    ):
+        response = app_client.post(
+            "/api/runs",
+            json={"agent_id": "infra-architect", "input_params": {"target_id": "ghost-target"}},
+        )
+
+    assert response.status_code == 404
+    mock_pool.enqueue_job.assert_not_awaited()
+
+
+def test_create_run_infra_architect_target_unverified(app_client: TestClient, test_session: Session):
+    """A target whose host key hasn't been fixed via TOFU (verify-host) must
+    block run creation — never hand the agent an SSH command without a pinned
+    known_hosts entry."""
+    _create_infra_architect(app_client)
+    test_session.add(InfraTarget(
+        id="homelab-dev",
+        name="Homelab Dev",
+        host="homelab-dev.internal",
+        ssh_user="agentos",
+        ssh_port=2222,
+    ))
+    test_session.commit()
+
+    mock_pool = AsyncMock()
+    mock_pool.enqueue_job = AsyncMock()
+    mock_pool.aclose = AsyncMock()
+
+    with (
+        patch.object(_runs_module.settings, "infra_agents_enabled", True),
+        patch("agentos.api.runs.create_pool", return_value=mock_pool),
+    ):
+        response = app_client.post(
+            "/api/runs",
+            json={"agent_id": "infra-architect", "input_params": {"target_id": "homelab-dev"}},
+        )
+
+    assert response.status_code == 400
+    assert "Verificar host" in response.json()["detail"]
+    mock_pool.enqueue_job.assert_not_awaited()
+
+
+def test_create_run_infra_architect_target_verified(app_client: TestClient, test_session: Session):
+    """A verified target (known_hosts_entry set) allows the run to proceed."""
+    _create_infra_architect(app_client)
+    test_session.add(InfraTarget(
+        id="homelab-dev",
+        name="Homelab Dev",
+        host="homelab-dev.internal",
+        ssh_user="agentos",
+        ssh_port=2222,
+        known_hosts_entry="homelab-dev.internal ssh-ed25519 AAAAtest",
+        host_key_fingerprint="256 SHA256:test test.internal (ED25519)",
+    ))
+    test_session.commit()
+
+    mock_pool = AsyncMock()
+    mock_pool.enqueue_job = AsyncMock()
+    mock_pool.aclose = AsyncMock()
+
+    with (
+        patch.object(_runs_module.settings, "infra_agents_enabled", True),
+        patch("agentos.api.runs.create_pool", return_value=mock_pool),
+    ):
+        response = app_client.post(
+            "/api/runs",
+            json={"agent_id": "infra-architect", "input_params": {"target_id": "homelab-dev"}},
+        )
+
+    assert response.status_code == 201
+    mock_pool.enqueue_job.assert_awaited_once()
