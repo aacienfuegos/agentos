@@ -30,7 +30,6 @@ services:
       - ${HOME}/.claude:/home/worker/.claude
       - ${HOME}/.claude.json:/home/worker/.claude.json
       - ./scripts/infra-dev/keys/agentos_infra:/home/worker/.ssh/agentos_infra:ro
-      - ./scripts/infra-dev/ssh_config:/home/worker/.ssh/config:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -66,7 +65,6 @@ services:
       - ${HOME}/.claude:/home/worker/.claude
       - ${HOME}/.claude.json:/home/worker/.claude.json
       - ./scripts/infra-dev/keys/agentos_infra:/home/worker/.ssh/agentos_infra:ro
-      - ./scripts/infra-dev/ssh_config:/home/worker/.ssh/config:ro
       # Knowledge agents con rutas externas: monta aquí los directorios del host.
       # Ejemplo: - ${HOME}/docu:/knowledge:rw
       # Luego pon knowledge_path=/knowledge/homelab en la config del agente.

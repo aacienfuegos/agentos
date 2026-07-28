@@ -133,6 +133,8 @@ export interface InfraTarget {
   ssh_user: string;
   ssh_port: number;
   notes: string;
+  known_hosts_entry: string | null;
+  host_key_fingerprint: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -296,6 +298,8 @@ export const api = {
       apiFetch<InfraTarget>(`/api/infra-targets/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (id: string) =>
       apiFetch<void>(`/api/infra-targets/${id}`, { method: "DELETE" }),
+    verifyHost: (id: string) =>
+      apiFetch<InfraTarget>(`/api/infra-targets/${id}/verify-host`, { method: "POST" }),
   },
   stats: () => apiFetch<Stats>("/api/stats"),
   health: () => apiFetch<HealthStatus>("/api/health"),

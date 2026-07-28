@@ -1,6 +1,7 @@
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 
 from arq.connections import RedisSettings
 from sqlmodel import Session
@@ -105,14 +106,25 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
 
         # Inject the concrete InfraTarget connection details for infra-architect
         # runs, so it diagnoses the target the caller picked instead of the
-        # fixed example alias hardcoded in its own system prompt.
+        # fixed example alias hardcoded in its own system prompt. La host key
+        # queda fijada (TOFU) en verify-host; aquí se materializa como fichero
+        # known_hosts propio del run para no depender de un ~/.ssh/config
+        # estático por host (eso obligaba a editar config + reiniciar
+        # contenedores por cada target nuevo).
         target_id: str | None = run.input_params.get("target_id")
         if not resume_session_id and target_id and agent.id == "infra-architect":
             target = session.get(InfraTarget, target_id)
-            if target:
+            if target and target.known_hosts_entry:
+                known_hosts_path = Path(f"/tmp/agentos-known-hosts-{target.id}")
+                known_hosts_path.write_text(target.known_hosts_entry + "\n")
+                ssh_cmd = (
+                    f"ssh -i /home/worker/.ssh/agentos_infra "
+                    f"-o UserKnownHostsFile={known_hosts_path} -o StrictHostKeyChecking=yes "
+                    f"-p {target.ssh_port} {target.ssh_user}@{target.host}"
+                )
                 target_ctx = (
                     f"## InfraTarget: {target.name} (id: {target.id})\n"
-                    f"Conéctate con: `ssh -p {target.ssh_port} {target.ssh_user}@{target.host} <comando>`\n"
+                    f"Conéctate con: `{ssh_cmd} <comando>`\n"
                     f"Notas: {target.notes or '(sin notas)'}\n"
                 )
                 agent.system_prompt = target_ctx + "\n---\n\n" + agent.system_prompt

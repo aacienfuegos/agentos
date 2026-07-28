@@ -4,7 +4,7 @@ from typing import Any
 import uuid
 
 from sqlmodel import SQLModel, Field, Column
-from sqlalchemy import JSON
+from sqlalchemy import JSON, Text
 
 
 class RunStatus(str, Enum):
@@ -101,6 +101,11 @@ class InfraTarget(SQLModel, table=True):
     ssh_user: str
     ssh_port: int = 22
     notes: str = ""
+    # TOFU: rellenos por POST /api/infra-targets/{id}/verify-host (ssh-keyscan),
+    # nunca por el CRUD directo. known_hosts_entry es la línea literal que se
+    # materializa como UserKnownHostsFile en tiempo de ejecución del run.
+    known_hosts_entry: str | None = Field(default=None, sa_column=Column(Text))
+    host_key_fingerprint: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

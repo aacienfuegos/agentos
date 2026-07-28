@@ -17,6 +17,7 @@ export default function InfraTargetsPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState<string | null>(null);
 
   const load = async () => {
     const [t, agents] = await Promise.all([api.infraTargets.list(), api.agents.list()]);
@@ -85,6 +86,18 @@ export default function InfraTargetsPage() {
     }
   };
 
+  const handleVerifyHost = async (id: string) => {
+    setVerifying(id);
+    try {
+      await api.infraTargets.verifyHost(id);
+      await load();
+    } catch (e) {
+      alert(`Error: ${e}`);
+    } finally {
+      setVerifying(null);
+    }
+  };
+
   const dialogOpen = showNew || editing !== null;
 
   return (
@@ -114,6 +127,7 @@ export default function InfraTargetsPage() {
             <tr className="border-b border-zinc-800">
               <th className="text-left px-4 py-3 text-xs text-zinc-500 font-medium">Nombre</th>
               <th className="text-left px-4 py-3 text-xs text-zinc-500 font-medium">Conexión SSH</th>
+              <th className="text-left px-4 py-3 text-xs text-zinc-500 font-medium">Host key</th>
               <th className="text-left px-4 py-3 text-xs text-zinc-500 font-medium">Notas</th>
               <th className="text-left px-4 py-3 text-xs text-zinc-500 font-medium">Acciones</th>
             </tr>
@@ -128,12 +142,29 @@ export default function InfraTargetsPage() {
                 <td className="px-4 py-3 text-zinc-400 font-mono text-xs">
                   ssh -p {t.ssh_port} {t.ssh_user}@{t.host}
                 </td>
+                <td className="px-4 py-3 text-xs">
+                  {t.host_key_fingerprint ? (
+                    <span className="text-emerald-400 font-mono" title={t.host_key_fingerprint}>
+                      ✓ verificada
+                    </span>
+                  ) : (
+                    <span className="text-amber-400">sin verificar</span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-zinc-500 text-xs max-w-xs truncate">{t.notes || "—"}</td>
                 <td className="px-4 py-3">
                   <div className="flex gap-1">
                     <button
+                      onClick={() => handleVerifyHost(t.id)}
+                      disabled={verifying === t.id}
+                      className="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {verifying === t.id ? "Verificando…" : t.host_key_fingerprint ? "Re-verificar" : "Verificar host"}
+                    </button>
+                    <button
                       onClick={() => handleRunDiagnostic(t.id)}
-                      disabled={!hasInfraArchitect || running === t.id}
+                      disabled={!hasInfraArchitect || !t.host_key_fingerprint || running === t.id}
+                      title={!t.host_key_fingerprint ? "Verifica la host key antes de lanzar el diagnóstico" : undefined}
                       className="text-xs px-2 py-1 rounded bg-violet-900 hover:bg-violet-800 text-violet-300 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {running === t.id ? "Lanzando…" : "Diagnóstico"}
@@ -152,7 +183,7 @@ export default function InfraTargetsPage() {
             ))}
             {targets.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-zinc-600">Sin targets de infraestructura configurados</td>
+                <td colSpan={5} className="px-4 py-8 text-center text-zinc-600">Sin targets de infraestructura configurados</td>
               </tr>
             )}
           </tbody>
