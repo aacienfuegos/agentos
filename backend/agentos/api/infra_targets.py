@@ -155,9 +155,22 @@ rm /tmp/agentos-infra-sudoers
 # 1. Crear el usuario dedicado (si no existe)
 sudo useradd -m -s /bin/bash {user} 2>/dev/null || true
 
-# 2. Preparar ~/.ssh
-sudo -u {user} mkdir -p {home}/.ssh
-sudo chmod 700 {home}/.ssh
+# 2. Preparar ~/.ssh — root-owned, NO de {target.ssh_user}. Si el directorio
+#    o el fichero fueran suyos, el propio agente podría (con una sesión SSH
+#    normal, sin necesitar sudo) sobreescribir su propia authorized_keys y
+#    quitarse el forced-command para conexiones futuras — borrar y recrear
+#    un fichero depende del permiso del DIRECTORIO que lo contiene, no del
+#    fichero en sí, así que no basta con proteger solo el fichero.
+#    711 (no 700): sshd baja privilegios al UID de {target.ssh_user} antes
+#    de abrir su propia authorized_keys (para evitar ataques vía symlinks),
+#    así que el usuario necesita permiso de tránsito sobre el directorio —
+#    solo tránsito (sin +r, no puede listar el contenido; sin +w, no puede
+#    crear ni borrar entradas). Verificado con un sshd real (Debian): 700
+#    rompe el login por completo, 711 lo deja funcionar sin permitir
+#    tocar el fichero.
+sudo mkdir -p {home}/.ssh
+sudo chown root:root {home}/.ssh
+sudo chmod 711 {home}/.ssh
 {sudo_block}
 # {step}. Instalar el wrapper de forced-command: audita cada comando
 #    (logger, no un fichero propio — el usuario no tiene privilegio para
@@ -169,10 +182,16 @@ cat <<'WRAPPER' | sudo tee {_WRAPPER_PATH} > /dev/null
 sudo chmod 755 {_WRAPPER_PATH}
 
 # {step + 1}. Instalar la clave pública con el wrapper como forced-command.
-#    `restrict` desactiva forwarding/X11/agent/pty/user-rc de una vez.{" Origen fijado a " + settings.agentos_source_ip + "." if settings.agentos_source_ip else " Sin restricción de IP de origen (AGENTOS_SOURCE_IP no configurado)."}
-echo '{from_clause}restrict,command="{_WRAPPER_PATH}" {target.ssh_public_key}' | sudo tee -a {home}/.ssh/authorized_keys > /dev/null
-sudo chmod 600 {home}/.ssh/authorized_keys
-sudo chown {user}:{user} {home}/.ssh/authorized_keys
+#    `restrict` desactiva forwarding/X11/agent/pty/user-rc de una vez.
+#    root:root también aquí (ver punto 2), pero 644 (no 600): sshd necesita
+#    poder LEER el fichero como {target.ssh_user} para autenticarlo — solo
+#    se le niega la escritura, que es lo que importa. Sobreescribe
+#    cualquier authorized_keys anterior en vez de añadir, para que
+#    regenerar la clave invalide de verdad la vieja en vez de dejarla
+#    activa junto a la nueva.{" Origen fijado a " + settings.agentos_source_ip + "." if settings.agentos_source_ip else " Sin restricción de IP de origen (AGENTOS_SOURCE_IP no configurado)."}
+echo '{from_clause}restrict,command="{_WRAPPER_PATH}" {target.ssh_public_key}' | sudo tee {home}/.ssh/authorized_keys > /dev/null
+sudo chown root:root {home}/.ssh/authorized_keys
+sudo chmod 644 {home}/.ssh/authorized_keys
 """
 
 

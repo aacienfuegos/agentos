@@ -149,6 +149,25 @@ Diseño concreto:
      agente reconoce el string `BLOCKED: patron destructivo detectado` en
      stderr (ver system prompt de `infra-architect`) y sabe que es un
      rechazo deliberado del host, no un fallo a reintentar.
+- **`~/.ssh` y `authorized_keys` son `root:root`, nunca del usuario SSH.**
+  Detectado por feedback de otro agente sobre una propuesta similar: el
+  wrapper acaba en `exec bash -c "$CMD"` — shell completa — así que si el
+  usuario fuera dueño de su propia `authorized_keys`, podría en una sesión
+  normal (sin sudo) hacer `echo '<clave sin restricciones>' >
+  ~/.ssh/authorized_keys` y anular `restrict`/`command=`/`from=` para
+  conexiones futuras. Proteger solo el fichero no basta — borrar y recrear
+  un fichero depende del permiso del *directorio* que lo contiene, no del
+  fichero en sí — así que `~/.ssh` también tiene que salir de su
+  propiedad. Permisos exactos (verificados contra un sshd real, no solo
+  razonados): directorio `711` y fichero `644`, ambos `root:root` — **no
+  `700`/`600`**, que es lo intuitivo pero rompe el login: sshd baja
+  privilegios al UID del usuario antes de abrir su propia
+  `authorized_keys` (para evitar ataques vía symlinks), así que el usuario
+  necesita tránsito (`+x`) sobre el directorio y lectura (`+r`) sobre el
+  fichero — lo único que se le niega es la escritura, que es lo único que
+  importa aquí. `authorized_keys` se sobreescribe (no se le hace append)
+  en cada `setup-commands`, para que regenerar la clave invalide de
+  verdad la anterior en vez de dejarla activa junto a la nueva.
 - **`from="<ip>"` opcional** (`settings.agentos_source_ip`, env var
   `AGENTOS_SOURCE_IP`, vacío por defecto): si se configura, se antepone a
   la línea de `authorized_keys` y sshd rechaza la conexión — antes de

@@ -112,6 +112,14 @@ def test_get_infra_target_setup_commands(app_client: TestClient):
     assert "logger -t agentos-ssh" in commands
     assert "BLOCKED: patron destructivo detectado" in commands
     assert "from=" not in commands  # sin AGENTOS_SOURCE_IP configurado
+    # ~/.ssh y authorized_keys deben ser root:root, NUNCA del propio usuario
+    # SSH — si no, el usuario puede borrar/recrear su propia authorized_keys
+    # en una sesión normal y anular restrict/command= para conexiones
+    # futuras (el permiso de borrar/crear depende del directorio, no del
+    # fichero, así que ambos tienen que quedar fuera de su propiedad).
+    assert "chown root:root" in commands
+    assert "chown agentos" not in commands
+    assert f"chown {TARGET_PAYLOAD['ssh_user']}:{TARGET_PAYLOAD['ssh_user']}" not in commands
 
 
 def test_get_infra_target_setup_commands_with_source_ip(app_client: TestClient):
