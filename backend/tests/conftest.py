@@ -1,5 +1,7 @@
 """Shared test fixtures for AgentOS backend tests."""
 import os
+import tempfile
+from pathlib import Path
 
 # Set required env vars BEFORE any agentos imports so pydantic-settings
 # validates.  The DATABASE_URL here is a placeholder; we override the engine
@@ -8,6 +10,9 @@ os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("ADMIN_PASSWORD", "testpass")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+# Los tests de infra-targets generan keypairs SSH reales (ssh-keygen es local
+# e instantáneo) — nunca contra /data/infra_keys de producción.
+os.environ.setdefault("INFRA_KEYS_PATH", str(Path(tempfile.gettempdir()) / "agentos-test-infra-keys"))
 
 from unittest.mock import AsyncMock, patch
 

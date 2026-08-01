@@ -118,7 +118,7 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
                 known_hosts_path = Path(f"/tmp/agentos-known-hosts-{target.id}")
                 known_hosts_path.write_text(target.known_hosts_entry + "\n")
                 ssh_cmd = (
-                    f"ssh -i /home/worker/.ssh/agentos_infra "
+                    f"ssh -i {settings.infra_keys_path}/{target.id}/id_ed25519 "
                     f"-o UserKnownHostsFile={known_hosts_path} -o StrictHostKeyChecking=yes "
                     f"-p {target.ssh_port} {target.ssh_user}@{target.host}"
                 )

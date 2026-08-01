@@ -18,6 +18,8 @@ export default function InfraTargetsPage() {
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState<string | null>(null);
   const [verifying, setVerifying] = useState<string | null>(null);
+  const [setupCommands, setSetupCommands] = useState<{ id: string; text: string } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const load = async () => {
     const [t, agents] = await Promise.all([api.infraTargets.list(), api.agents.list()]);
@@ -57,15 +59,28 @@ export default function InfraTargetsPage() {
       };
       if (editing) {
         await api.infraTargets.update(editing.id, payload);
+        closeDialog();
+        load();
       } else {
-        await api.infraTargets.create({ id: form.id, ...payload });
+        const created = await api.infraTargets.create({ id: form.id, ...payload });
+        closeDialog();
+        load();
+        const { commands } = await api.infraTargets.setupCommands(created.id);
+        setSetupCommands({ id: created.id, text: commands });
       }
-      closeDialog();
-      load();
     } catch (e) {
       alert(`Error: ${e}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleShowCommands = async (id: string) => {
+    try {
+      const { commands } = await api.infraTargets.setupCommands(id);
+      setSetupCommands({ id, text: commands });
+    } catch (e) {
+      alert(`Error: ${e}`);
     }
   };
 
@@ -154,6 +169,14 @@ export default function InfraTargetsPage() {
                 <td className="px-4 py-3 text-zinc-500 text-xs max-w-xs truncate">{t.notes || "—"}</td>
                 <td className="px-4 py-3">
                   <div className="flex gap-1">
+                    <button
+                      onClick={() => handleShowCommands(t.id)}
+                      disabled={!t.ssh_public_key}
+                      title={!t.ssh_public_key ? "Sin clave SSH generada" : undefined}
+                      className="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Comandos
+                    </button>
                     <button
                       onClick={() => handleVerifyHost(t.id)}
                       disabled={verifying === t.id}
@@ -264,6 +287,32 @@ export default function InfraTargetsPage() {
               {saving ? "Guardando…" : editing ? "Guardar cambios" : "Crear target"}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={setupCommands !== null}
+        onOpenChange={(open) => { if (!open) { setSetupCommands(null); setCopied(false); } }}
+      >
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100 max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Comandos de instalación — {setupCommands?.id}</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-zinc-500">
+            Ejecuta esto en el host de destino (no en AgentOS) para dar acceso al agente.
+          </p>
+          <pre className="bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-xs text-zinc-300 overflow-x-auto whitespace-pre-wrap max-h-96">
+            {setupCommands?.text}
+          </pre>
+          <Button
+            className="w-full bg-violet-600 hover:bg-violet-700"
+            onClick={() => {
+              navigator.clipboard.writeText(setupCommands?.text ?? "");
+              setCopied(true);
+            }}
+          >
+            {copied ? "Copiado" : "Copiar"}
+          </Button>
         </DialogContent>
       </Dialog>
     </div>

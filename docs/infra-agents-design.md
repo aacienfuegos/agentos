@@ -91,10 +91,24 @@ actuar sobre `InfraTarget("homelab-dev")`).
 
 Diseño concreto:
 
-- Keypair dedicado `agentos_infra_ed25519`, generado una vez, cuya clave
-  privada vive en un volumen Docker separado (`infra_ssh_keys`) montado solo
-  en el contenedor `worker` — nunca en el filesystem del host fuera de Docker,
-  nunca en el repo.
+- **Un keypair ed25519 dedicado por `InfraTarget`**, no uno compartido entre
+  toda la flota. AgentOS lo genera automáticamente al crear el target
+  (`POST /api/infra-targets` → `api/infra_targets.py::_generate_keypair`,
+  `ssh-keygen` local e instantáneo) y guarda la privada en
+  `settings.infra_keys_path/{id}/id_ed25519` (por defecto `/data/infra_keys`,
+  dentro del volumen que ya comparten `backend` y `worker` — sin volumen
+  nuevo). La privada nunca toca la DB ni el repo; la pública sí se guarda
+  (`InfraTarget.ssh_public_key`) para poder mostrarla y regenerar los
+  comandos de instalación en cualquier momento.
+- Una clave por host acota el blast radius: comprometer un target no da
+  acceso al resto de la flota, y revocar el acceso a un host no obliga a
+  rotar y redistribuir en todos los demás — solo se borra su directorio de
+  claves (`DELETE /api/infra-targets/{id}` lo hace automáticamente).
+- `GET /api/infra-targets/{id}/setup-commands` genera el bloque de comandos
+  a pegar en el host de destino (crear usuario, `.ssh`, script de allowlist,
+  línea de `authorized_keys` con forced command) — la única parte que sigue
+  siendo manual por diseño explícito del propietario: AgentOS nunca hace SSH
+  a sus propios contenedores para provisionar el lado del host.
 - En cada host gestionado (`InfraTarget`), la clave pública se instala con un
   **forced command** en `authorized_keys`:
   ```
@@ -158,12 +172,14 @@ coste de un despliegue erróneo autónomo.
   estos agentes ni necesita generar el keypair dedicado.
 - Cuando `phase:multi-tenant` se implemente (ya en el roadmap del proyecto:
   tabla de usuarios, API keys cifradas por usuario), la extensión natural es:
-  `InfraTarget.owner_user_id` nullable + el keypair SSH deja de ser un volumen
-  compartido del `worker` y pasa a ser un secreto cifrado por usuario, igual
-  que ya está previsto para las claves de Anthropic/GitHub. No se diseña esa
-  capa ahora (YAGNI) pero el modelo de permisos de la sección 2 ya es
-  compatible: cada `InfraTarget` apunta a *su propio* keypair con *su propio*
-  alcance, así que añadir un propietario no rompe el modelo, solo lo acota más.
+  `InfraTarget.owner_user_id` nullable + las claves privadas por-target (ya
+  aisladas por host, ver sección de diseño de arriba) pasan de vivir en el
+  volumen `/data` compartido del `worker` a ser un secreto cifrado por
+  usuario, igual que ya está previsto para las claves de Anthropic/GitHub. No
+  se diseña esa capa ahora (YAGNI) pero el modelo de permisos de la sección 2
+  ya es compatible: cada `InfraTarget` apunta a *su propio* keypair con *su
+  propio* alcance, así que añadir un propietario no rompe el modelo, solo lo
+  acota más.
 
 ---
 
@@ -175,21 +191,23 @@ autor:
 
 ```
 docker-compose.dev.yml
-  worker  ──SSH (agentos_infra key, forced command)──►  infra-dev-target
+  worker  ──SSH (keypair por-target, forced command)──►  infra-dev-target
   (contenedor openssh-server genérico, red interna de docker compose)
 ```
 
 - `infra-dev-target`: contenedor `linuxserver/openssh-server` en la red
   interna de `docker-compose.dev.yml`, sin exposición de puertos al host.
   Simula "un nodo del homelab" de forma genérica.
-- `scripts/setup-infra-dev.sh`: genera el keypair dedicado si no existe e
-  instala la clave pública en el target con el forced command.
-- `infra-architect` (nuevo builtin agent): puede ejecutarse contra
-  `infra-dev-target` de verdad — `ssh -i /home/worker/.ssh/agentos_infra
-  worker@infra-dev-target <comando-permitido>` — y el resultado se puede
-  verificar en el log del run.
-- Ver la sección "Cómo probarlo" en el README de esta rama para el
-  procedimiento paso a paso.
+- El `authorized_keys` de este contenedor (`scripts/infra-dev/authorized_keys`)
+  es un bind mount de solo lectura estático — no puede recibir la clave
+  dinámica que AgentOS genera al crear el `InfraTarget` directamente. Por eso
+  `scripts/infra-dev/sync-dev-target-key.sh` copia la pública generada para
+  el target `infra-dev-target` (leída desde `/data/infra_keys/` dentro del
+  contenedor `backend`) a ese fichero — solo hace falta tras crear el target
+  la primera vez.
+- `infra-architect` (builtin agent): puede ejecutarse contra
+  `infra-dev-target` de verdad una vez sincronizada la clave, y el resultado
+  se puede verificar en el log del run.
 
 ## Descomposición en issues
 

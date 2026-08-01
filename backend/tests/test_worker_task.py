@@ -209,7 +209,7 @@ async def test_run_agent_task_infra_target_context_injected(db_session):
 
     prompt = captured["system_prompt"]
     assert "## InfraTarget: Homelab Dev" in prompt
-    assert "-i /home/worker/.ssh/agentos_infra" in prompt
+    assert f"-i {_tasks_module.settings.infra_keys_path}/homelab-dev/id_ed25519" in prompt
     assert "-o StrictHostKeyChecking=yes" in prompt
     assert "-p 2222 agentos@homelab-dev.internal" in prompt
     assert "Nodo de pruebas" in prompt

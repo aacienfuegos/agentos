@@ -33,6 +33,7 @@ class Settings(BaseSettings):
 
     # Infra agents (phase:infra-agents-1) — disabled by default, single-tenant only
     infra_agents_enabled: bool = False
+    infra_keys_path: str = "/data/infra_keys"
 
     @property
     def is_dev(self) -> bool:

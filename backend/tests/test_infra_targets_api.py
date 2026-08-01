@@ -31,6 +31,43 @@ def test_create_infra_target(app_client: TestClient):
     assert data["ssh_port"] == 2222
 
 
+def test_create_infra_target_generates_dedicated_ssh_keypair(app_client: TestClient):
+    """Cada target debe recibir su propio keypair — nunca uno compartido —
+    para acotar el blast radius si un host se ve comprometido."""
+    response = app_client.post("/api/infra-targets", json=TARGET_PAYLOAD)
+    pubkey = response.json()["ssh_public_key"]
+    assert pubkey is not None
+    assert pubkey.startswith("ssh-ed25519 ")
+    assert "agentos-infra-test-target" in pubkey
+
+
+def test_delete_infra_target_removes_ssh_keys(app_client: TestClient):
+    from pathlib import Path
+    from agentos.config import settings
+
+    app_client.post("/api/infra-targets", json=TARGET_PAYLOAD)
+    key_dir = Path(settings.infra_keys_path) / "test-target"
+    assert key_dir.exists()
+
+    app_client.delete("/api/infra-targets/test-target")
+    assert not key_dir.exists()
+
+
+def test_get_infra_target_setup_commands(app_client: TestClient):
+    app_client.post("/api/infra-targets", json=TARGET_PAYLOAD)
+    response = app_client.get("/api/infra-targets/test-target/setup-commands")
+    assert response.status_code == 200
+    commands = response.json()["commands"]
+    assert "useradd" in commands
+    assert "authorized_keys" in commands
+    assert "ssh-ed25519 " in commands
+
+
+def test_get_infra_target_setup_commands_not_found(app_client: TestClient):
+    response = app_client.get("/api/infra-targets/nonexistent/setup-commands")
+    assert response.status_code == 404
+
+
 def test_create_infra_target_default_port(app_client: TestClient):
     payload = {k: v for k, v in TARGET_PAYLOAD.items() if k != "ssh_port"}
     response = app_client.post("/api/infra-targets", json=payload)

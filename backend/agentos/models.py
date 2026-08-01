@@ -106,6 +106,14 @@ class InfraTarget(SQLModel, table=True):
     # materializa como UserKnownHostsFile en tiempo de ejecución del run.
     known_hosts_entry: str | None = Field(default=None, sa_column=Column(Text))
     host_key_fingerprint: str | None = None
+    # Keypair ed25519 dedicado por target, generado automáticamente en
+    # POST /api/infra-targets (ver api/infra_targets.py::_generate_keypair).
+    # La privada nunca toca la DB ni el repo — vive en
+    # settings.infra_keys_path/{id}/id_ed25519, en el volumen /data que ya
+    # comparten backend y worker. Una clave por host (no una compartida)
+    # acota el blast radius: comprometer un host no compromete el resto de
+    # la flota, y se puede revocar uno solo sin rotar en los demás.
+    ssh_public_key: str | None = Field(default=None, sa_column=Column(Text))
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
