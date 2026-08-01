@@ -172,6 +172,22 @@ def delete_infra_target(target_id: str, session: SessionDep) -> None:
     shutil.rmtree(_key_dir(target_id), ignore_errors=True)
 
 
+@router.post("/{target_id}/regenerate-key")
+def regenerate_infra_target_key(target_id: str, session: SessionDep) -> InfraTarget:
+    """Genera un keypair nuevo para este target, descartando el anterior. La
+    clave vieja deja de servir en el host hasta que se reemplace a mano —
+    tras regenerar hay que volver a pegar "Comandos" en el host de destino."""
+    target = session.get(InfraTarget, target_id)
+    if not target:
+        raise HTTPException(404, "Infra target not found")
+    target.ssh_public_key = _generate_keypair(target.id)
+    target.updated_at = datetime.utcnow()
+    session.add(target)
+    session.commit()
+    session.refresh(target)
+    return target
+
+
 @router.get("/{target_id}/setup-commands")
 def get_infra_target_setup_commands(target_id: str, session: SessionDep) -> dict[str, str]:
     """Comandos para provisionar el lado del host — la única parte que sigue

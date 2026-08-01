@@ -302,6 +302,8 @@ export const api = {
       apiFetch<void>(`/api/infra-targets/${id}`, { method: "DELETE" }),
     verifyHost: (id: string) =>
       apiFetch<InfraTarget>(`/api/infra-targets/${id}/verify-host`, { method: "POST" }),
+    regenerateKey: (id: string) =>
+      apiFetch<InfraTarget>(`/api/infra-targets/${id}/regenerate-key`, { method: "POST" }),
     setupCommands: (id: string) =>
       apiFetch<{ commands: string }>(`/api/infra-targets/${id}/setup-commands`),
   },

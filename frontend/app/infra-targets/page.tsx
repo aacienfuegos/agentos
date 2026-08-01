@@ -34,6 +34,7 @@ export default function InfraTargetsPage() {
   const [verifying, setVerifying] = useState<string | null>(null);
   const [setupCommands, setSetupCommands] = useState<{ id: string; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   const load = async () => {
     const [t, agents] = await Promise.all([api.infraTargets.list(), api.agents.list()]);
@@ -100,6 +101,22 @@ export default function InfraTargetsPage() {
       setSetupCommands({ id, text: commands });
     } catch (e) {
       alert(`Error: ${e}`);
+    }
+  };
+
+  const handleRegenerateKey = async (id: string) => {
+    if (!confirm("La clave anterior dejará de funcionar en el host hasta que vuelvas a instalar la nueva. ¿Regenerar?")) return;
+    setRegenerating(true);
+    try {
+      const updated = await api.infraTargets.regenerateKey(id);
+      setEditing(updated);
+      await load();
+      const { commands } = await api.infraTargets.setupCommands(id);
+      setSetupCommands({ id, text: commands });
+    } catch (e) {
+      alert(`Error: ${e}`);
+    } finally {
+      setRegenerating(false);
     }
   };
 
@@ -249,28 +266,6 @@ export default function InfraTargetsPage() {
                 />
               </div>
             )}
-            {editing?.ssh_public_key && (
-              <div className="space-y-1.5">
-                <Label className="text-zinc-300 text-sm">Clave pública SSH (generada automáticamente)</Label>
-                <div className="flex gap-2">
-                  <input
-                    readOnly
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono text-zinc-400"
-                    value={editing.ssh_public_key}
-                    onClick={(e) => (e.target as HTMLInputElement).select()}
-                  />
-                  <button
-                    onClick={() => navigator.clipboard.writeText(editing.ssh_public_key ?? "")}
-                    className="shrink-0 text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
-                  >
-                    Copiar
-                  </button>
-                </div>
-                <p className="text-xs text-zinc-600">
-                  No es secreta — puedes pegarla en cualquier host adicional sin recrear este target.
-                </p>
-              </div>
-            )}
             <div className="space-y-1.5">
               <Label className="text-zinc-300 text-sm">Nombre</Label>
               <input
@@ -335,6 +330,37 @@ export default function InfraTargetsPage() {
                 onChange={(e) => setForm((f) => ({ ...f, sudo_commands: e.target.value }))}
               />
             </div>
+            {editing?.ssh_public_key && (
+              <div className="space-y-1.5 border-t border-zinc-800 pt-4">
+                <Label className="text-zinc-300 text-sm">Clave pública SSH (generada automáticamente)</Label>
+                <div className="flex gap-2">
+                  <input
+                    readOnly
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono text-zinc-400"
+                    value={editing.ssh_public_key}
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                  />
+                  <button
+                    onClick={() => navigator.clipboard.writeText(editing.ssh_public_key ?? "")}
+                    className="shrink-0 text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                  >
+                    Copiar
+                  </button>
+                </div>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-zinc-600">
+                    No es secreta — puedes pegarla en cualquier host adicional sin recrear este target.
+                  </p>
+                  <button
+                    onClick={() => handleRegenerateKey(editing.id)}
+                    disabled={regenerating}
+                    className="shrink-0 text-xs px-2 py-1 rounded bg-red-950 hover:bg-red-900 text-red-400 disabled:opacity-40"
+                  >
+                    {regenerating ? "Regenerando…" : "Regenerar clave"}
+                  </button>
+                </div>
+              </div>
+            )}
             <Button
               className="w-full bg-violet-600 hover:bg-violet-700"
               onClick={handleSave}

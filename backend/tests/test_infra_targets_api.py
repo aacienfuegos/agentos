@@ -41,6 +41,28 @@ def test_create_infra_target_generates_dedicated_ssh_keypair(app_client: TestCli
     assert "agentos-infra-test-target" in pubkey
 
 
+def test_regenerate_infra_target_key(app_client: TestClient):
+    """La clave vieja deja de ser la vigente tras regenerar — el target debe
+    apuntar a un keypair distinto, no al mismo."""
+    created = app_client.post("/api/infra-targets", json=TARGET_PAYLOAD).json()
+    old_pubkey = created["ssh_public_key"]
+
+    response = app_client.post("/api/infra-targets/test-target/regenerate-key")
+    assert response.status_code == 200
+    new_pubkey = response.json()["ssh_public_key"]
+    assert new_pubkey != old_pubkey
+    assert new_pubkey.startswith("ssh-ed25519 ")
+
+    # Persistido, no solo devuelto en la respuesta
+    get_resp = app_client.get("/api/infra-targets/test-target")
+    assert get_resp.json()["ssh_public_key"] == new_pubkey
+
+
+def test_regenerate_infra_target_key_not_found(app_client: TestClient):
+    response = app_client.post("/api/infra-targets/nonexistent/regenerate-key")
+    assert response.status_code == 404
+
+
 def test_delete_infra_target_removes_ssh_keys(app_client: TestClient):
     from pathlib import Path
     from agentos.config import settings
