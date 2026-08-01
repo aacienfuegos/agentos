@@ -1,4 +1,4 @@
-"""add infra target allowed commands
+"""add infra target sudo commands
 
 Revision ID: b1c2d3e4f5a6
 Revises: 9a1b2c3d4e5f
@@ -22,10 +22,10 @@ def upgrade() -> None:
     """Upgrade schema."""
     op.add_column(
         'infra_targets',
-        sa.Column('allowed_commands', sa.JSON(), nullable=False, server_default='[]'),
+        sa.Column('sudo_commands', sa.JSON(), nullable=False, server_default='[]'),
     )
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_column('infra_targets', 'allowed_commands')
+    op.drop_column('infra_targets', 'sudo_commands')

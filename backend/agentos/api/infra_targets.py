@@ -17,22 +17,16 @@ from ..models import InfraTarget
 router = APIRouter()
 SessionDep = Annotated[Session, Depends(get_session)]
 
-# Comandos de diagnóstico de solo lectura con los que se siembra un target
-# nuevo — editable después por target vía PUT (InfraTarget.allowed_commands),
-# así cada host puede tener más o menos permisos. La lista vive en sudoers
-# (mecanismo estándar de Linux para "usuario X solo puede ejecutar estos
-# comandos exactos como root"), no en un script casero parseando
-# $SSH_ORIGINAL_COMMAND — sudo ya trae matching de argumentos probado y
-# logging/auditoría gratis (`sudo -l -U <user>`, /var/log/auth.log).
-_DEFAULT_ALLOWED_COMMANDS = [
-    "/usr/bin/uptime",
-    "/usr/bin/uname -a",
-    "/usr/bin/df -h",
-    "/usr/bin/free -h",
-    "/usr/sbin/ip a",
+# Comandos que suelen necesitar privilegio en un host recién provisionado —
+# semilla por defecto de InfraTarget.sudo_commands, editable después por
+# target. "docker ps" es el caso canónico: la alternativa sería meter al
+# usuario en el grupo docker, que equivale a darle root (el grupo puede
+# montar el filesystem del host vía un contenedor). Todo lo demás (uptime,
+# df -h, free -h, ip a, uname -a...) corre en el scope normal del usuario,
+# sin necesitar estar aquí ni en sudoers.
+_DEFAULT_SUDO_COMMANDS = [
     "/usr/bin/docker ps",
     "/usr/bin/docker ps -a",
-    "/usr/bin/systemctl status",
     "/usr/bin/journalctl --no-pager -n 100",
 ]
 
@@ -66,12 +60,31 @@ def _build_setup_commands(target: InfraTarget) -> str:
     """Bloque de comandos para ejecutar A MANO en el host de destino — AgentOS
     nunca hace SSH a sus propios contenedores para esto (ver CLAUDE.md:
     provisión de usuario/clave en el host nuevo queda fuera del alcance
-    automatizable, solo la parte del lado AgentOS se automatiza)."""
-    if not target.allowed_commands:
-        raise HTTPException(400, "El target no tiene comandos permitidos configurados")
+    automatizable, solo la parte del lado AgentOS se automatiza).
+
+    Sin forced-command: el usuario SSH dedicado corre en su scope normal sin
+    privilegios, sin restricción de qué comandos puede pedir por SSH — el
+    límite real es lo que ese usuario Linux puede hacer. sudo solo entra
+    para el subconjunto de sudo_commands que de verdad necesita privilegio."""
     user = shlex.quote(target.ssh_user)
     home = f"/home/{target.ssh_user}"
-    cmnd_alias = ", ".join(target.allowed_commands)
+    sudo_block = ""
+    if target.sudo_commands:
+        cmnd_alias = ", ".join(target.sudo_commands)
+        sudo_block = f"""
+# 3. Autorizar SOLO estos comandos concretos vía sudo — todo lo demás el
+#    agente lo ejecuta directamente en el scope normal de {target.ssh_user},
+#    sin privilegios. Validado con visudo antes de instalar, para no dejar
+#    sudoers roto. Ajusta rutas si tu distro las tiene en otro sitio
+#    (`which docker`).
+cat <<'EOF' > /tmp/agentos-infra-sudoers
+Cmnd_Alias AGENTOS_SUDO = {cmnd_alias}
+{target.ssh_user} ALL=(root) NOPASSWD: AGENTOS_SUDO
+EOF
+sudo visudo -cf /tmp/agentos-infra-sudoers
+sudo install -o root -g root -m 440 /tmp/agentos-infra-sudoers /etc/sudoers.d/agentos-infra
+rm /tmp/agentos-infra-sudoers
+"""
     return f"""# Ejecutar en el host de destino ({target.host}), no en AgentOS.
 
 # 1. Crear el usuario dedicado (si no existe)
@@ -80,22 +93,11 @@ sudo useradd -m -s /bin/bash {user} 2>/dev/null || true
 # 2. Preparar ~/.ssh
 sudo -u {user} mkdir -p {home}/.ssh
 sudo chmod 700 {home}/.ssh
-
-# 3. Autorizar SOLO los comandos de diagnóstico configurados para este target
-#    (Infraestructura > Editar > "Comandos permitidos") vía sudoers, validado
-#    con visudo antes de instalarlo para no dejar sudoers roto. Ajusta las
-#    rutas de los binarios si tu distro los tiene en otro sitio (`which docker`).
-cat <<'EOF' > /tmp/agentos-infra-sudoers
-Cmnd_Alias AGENTOS_DIAG = {cmnd_alias}
-{target.ssh_user} ALL=(root) NOPASSWD: AGENTOS_DIAG
-EOF
-sudo visudo -cf /tmp/agentos-infra-sudoers
-sudo install -o root -g root -m 440 /tmp/agentos-infra-sudoers /etc/sudoers.d/agentos-infra
-rm /tmp/agentos-infra-sudoers
-
-# 4. Instalar la clave pública: el forced command delega en sudo, que aplica
-#    el allowlist de arriba (rechaza cualquier comando fuera de la lista)
-echo 'command="sudo -n -- $SSH_ORIGINAL_COMMAND",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty {target.ssh_public_key}' | sudo tee -a {home}/.ssh/authorized_keys > /dev/null
+{sudo_block}
+# {"4" if sudo_block else "3"}. Instalar la clave pública — sin forced-command,
+#    el agente opera en el scope normal de {user} (sin privilegios); solo se
+#    restringen capacidades de canal SSH que no necesita.
+echo 'no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty {target.ssh_public_key}' | sudo tee -a {home}/.ssh/authorized_keys > /dev/null
 sudo chmod 600 {home}/.ssh/authorized_keys
 sudo chown {user}:{user} {home}/.ssh/authorized_keys
 """
@@ -108,7 +110,7 @@ class InfraTargetCreate(BaseModel):
     ssh_user: str = Field(min_length=1, max_length=64)
     ssh_port: int = Field(default=22, ge=1, le=65535)
     notes: str = Field(default="", max_length=2000)
-    allowed_commands: list[str] | None = None
+    sudo_commands: list[str] | None = None
 
 
 class InfraTargetUpdate(BaseModel):
@@ -117,7 +119,7 @@ class InfraTargetUpdate(BaseModel):
     ssh_user: str | None = Field(default=None, min_length=1, max_length=64)
     ssh_port: int | None = Field(default=None, ge=1, le=65535)
     notes: str | None = Field(default=None, max_length=2000)
-    allowed_commands: list[str] | None = None
+    sudo_commands: list[str] | None = None
 
 
 @router.get("")
@@ -129,8 +131,8 @@ def list_infra_targets(session: SessionDep) -> list[InfraTarget]:
 def create_infra_target(data: InfraTargetCreate, session: SessionDep) -> InfraTarget:
     if session.get(InfraTarget, data.id):
         raise HTTPException(400, f"Infra target '{data.id}' already exists")
-    target = InfraTarget(**data.model_dump(exclude={"allowed_commands"}))
-    target.allowed_commands = data.allowed_commands if data.allowed_commands is not None else list(_DEFAULT_ALLOWED_COMMANDS)
+    target = InfraTarget(**data.model_dump(exclude={"sudo_commands"}))
+    target.sudo_commands = data.sudo_commands if data.sudo_commands is not None else list(_DEFAULT_SUDO_COMMANDS)
     target.ssh_public_key = _generate_keypair(target.id)
     session.add(target)
     session.commit()

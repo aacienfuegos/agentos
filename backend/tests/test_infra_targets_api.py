@@ -53,20 +53,20 @@ def test_delete_infra_target_removes_ssh_keys(app_client: TestClient):
     assert not key_dir.exists()
 
 
-def test_create_infra_target_seeds_default_allowed_commands(app_client: TestClient):
-    """Sin especificar allowed_commands, el target debe recibir una lista por
+def test_create_infra_target_seeds_default_sudo_commands(app_client: TestClient):
+    """Sin especificar sudo_commands, el target debe recibir una lista por
     defecto útil (editable después por-host), no quedarse vacío."""
     response = app_client.post("/api/infra-targets", json=TARGET_PAYLOAD)
-    commands = response.json()["allowed_commands"]
+    commands = response.json()["sudo_commands"]
     assert len(commands) > 0
-    assert "/usr/bin/uptime" in commands
+    assert "/usr/bin/docker ps" in commands
 
 
-def test_create_infra_target_custom_allowed_commands(app_client: TestClient):
-    """Cada host puede tener más o menos permisos que otro."""
-    payload = {**TARGET_PAYLOAD, "allowed_commands": ["/usr/bin/uptime"]}
+def test_create_infra_target_custom_sudo_commands(app_client: TestClient):
+    """Cada host puede necesitar un subconjunto distinto de comandos con sudo."""
+    payload = {**TARGET_PAYLOAD, "sudo_commands": ["/usr/bin/docker ps"]}
     response = app_client.post("/api/infra-targets", json=payload)
-    assert response.json()["allowed_commands"] == ["/usr/bin/uptime"]
+    assert response.json()["sudo_commands"] == ["/usr/bin/docker ps"]
 
 
 def test_get_infra_target_setup_commands(app_client: TestClient):
@@ -77,22 +77,26 @@ def test_get_infra_target_setup_commands(app_client: TestClient):
     assert "useradd" in commands
     assert "authorized_keys" in commands
     assert "ssh-ed25519 " in commands
-    # Permisos vía sudoers (validado con visudo antes de instalar), no un
-    # script casero parseando $SSH_ORIGINAL_COMMAND.
-    assert "Cmnd_Alias AGENTOS_DIAG" in commands
+    # Permisos vía sudoers (validado con visudo antes de instalar) solo para
+    # el subconjunto que necesita privilegio — sin forced-command en la
+    # clave, el resto corre en el scope normal del usuario.
+    assert "Cmnd_Alias AGENTOS_SUDO" in commands
     assert "visudo -cf" in commands
     assert "/etc/sudoers.d/agentos-infra" in commands
-    assert 'command="sudo -n -- $SSH_ORIGINAL_COMMAND"' in commands
-    assert "/usr/bin/uptime" in commands
+    assert "/usr/bin/docker ps" in commands
+    assert 'command="' not in commands
 
 
-def test_get_infra_target_setup_commands_no_allowed_commands(app_client: TestClient):
-    """Sin comandos permitidos configurados no se puede generar un Cmnd_Alias
-    vacío (sudoers inválido) — debe fallar con un mensaje claro."""
-    payload = {**TARGET_PAYLOAD, "allowed_commands": []}
+def test_get_infra_target_setup_commands_no_sudo_commands(app_client: TestClient):
+    """Sin sudo_commands configurados no se instala sudoers en absoluto — el
+    usuario simplemente corre en su scope normal sin privilegios."""
+    payload = {**TARGET_PAYLOAD, "sudo_commands": []}
     app_client.post("/api/infra-targets", json=payload)
     response = app_client.get("/api/infra-targets/test-target/setup-commands")
-    assert response.status_code == 400
+    assert response.status_code == 200
+    commands = response.json()["commands"]
+    assert "sudoers" not in commands
+    assert "authorized_keys" in commands
 
 
 def test_get_infra_target_setup_commands_not_found(app_client: TestClient):

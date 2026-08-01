@@ -114,12 +114,17 @@ class InfraTarget(SQLModel, table=True):
     # acota el blast radius: comprometer un host no compromete el resto de
     # la flota, y se puede revocar uno solo sin rotar en los demás.
     ssh_public_key: str | None = Field(default=None, sa_column=Column(Text))
-    # Comandos exactos (con path completo, ej. "/usr/bin/docker ps") que este
-    # host autoriza vía sudoers — editable por target, así cada host puede
-    # tener más o menos permisos. Se usa tanto para generar el Cmnd_Alias de
-    # setup-commands como para decirle al agente de antemano qué puede
-    # ejecutar (en vez de que lo descubra a base de intentos rechazados).
-    allowed_commands: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    # NO es un allowlist de "lo único que el agente puede ejecutar" — el
+    # usuario SSH dedicado corre en su scope normal sin privilegios y puede
+    # ejecutar cualquier comando de solo lectura de ese scope (uptime, df -h,
+    # ip a...) sin restricción a nivel de SSH. Esta lista es solo el
+    # subconjunto que de verdad necesita privilegio (ej. "/usr/bin/docker ps",
+    # que si no requeriría meter al usuario en el grupo docker — equivalente
+    # a root) y que por tanto se autoriza vía sudoers con NOPASSWD acotado a
+    # exactamente estos comandos+argumentos. Editable por target: cada host
+    # puede necesitar un subconjunto distinto. Se inyecta también en el
+    # contexto del agente para que sepa qué necesita anteponer con `sudo`.
+    sudo_commands: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

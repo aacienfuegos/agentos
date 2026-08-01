@@ -122,12 +122,15 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
                     f"-o UserKnownHostsFile={known_hosts_path} -o StrictHostKeyChecking=yes "
                     f"-p {target.ssh_port} {target.ssh_user}@{target.host}"
                 )
-                allowed = ", ".join(target.allowed_commands) if target.allowed_commands else "(ninguno configurado)"
+                sudo_cmds = ", ".join(target.sudo_commands) if target.sudo_commands else "(ninguno configurado)"
                 target_ctx = (
                     f"## InfraTarget: {target.name} (id: {target.id})\n"
                     f"Conéctate con: `{ssh_cmd} <comando>`\n"
-                    f"Comandos permitidos en este host (sudoers rechaza cualquier otro, "
-                    f"no pierdas turnos probando cosas fuera de esta lista): {allowed}\n"
+                    f"Puedes ejecutar cualquier comando de solo lectura en tu scope normal "
+                    f"de usuario sin privilegios (uptime, df -h, free -h, ip a, uname -a, "
+                    f"systemctl status, etc.). Para estos comandos concretos antepón `sudo` "
+                    f"(ya configurado sin contraseña en este host, nada más funciona con "
+                    f"sudo): {sudo_cmds}\n"
                     f"Notas: {target.notes or '(sin notas)'}\n"
                 )
                 agent.system_prompt = target_ctx + "\n---\n\n" + agent.system_prompt

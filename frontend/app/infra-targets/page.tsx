@@ -7,15 +7,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-const DEFAULT_ALLOWED_COMMANDS = [
-  "/usr/bin/uptime",
-  "/usr/bin/uname -a",
-  "/usr/bin/df -h",
-  "/usr/bin/free -h",
-  "/usr/sbin/ip a",
+const DEFAULT_SUDO_COMMANDS = [
   "/usr/bin/docker ps",
   "/usr/bin/docker ps -a",
-  "/usr/bin/systemctl status",
   "/usr/bin/journalctl --no-pager -n 100",
 ];
 
@@ -26,7 +20,7 @@ const emptyForm = {
   ssh_user: "agentos",
   ssh_port: "22",
   notes: "",
-  allowed_commands: DEFAULT_ALLOWED_COMMANDS.join("\n"),
+  sudo_commands: DEFAULT_SUDO_COMMANDS.join("\n"),
 };
 
 export default function InfraTargetsPage() {
@@ -58,7 +52,7 @@ export default function InfraTargetsPage() {
       ssh_user: target.ssh_user,
       ssh_port: String(target.ssh_port),
       notes: target.notes,
-      allowed_commands: target.allowed_commands.join("\n"),
+      sudo_commands: target.sudo_commands.join("\n"),
     });
   };
 
@@ -77,7 +71,7 @@ export default function InfraTargetsPage() {
         ssh_user: form.ssh_user,
         ssh_port: Number(form.ssh_port) || 22,
         notes: form.notes,
-        allowed_commands: form.allowed_commands
+        sudo_commands: form.sudo_commands
           .split("\n")
           .map((c) => c.trim())
           .filter(Boolean),
@@ -327,17 +321,18 @@ export default function InfraTargetsPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-zinc-300 text-sm">Comandos permitidos (sudoers, uno por línea)</Label>
+              <Label className="text-zinc-300 text-sm">Comandos que requieren sudo (uno por línea)</Label>
               <p className="text-xs text-zinc-600">
-                Se instalan con forced-command en el host vía &ldquo;Comandos&rdquo;. El agente solo
-                puede ejecutar exactamente esto — ajusta según lo que necesites permitir en este host.
+                El agente ya puede ejecutar cualquier comando de solo lectura en su scope normal de
+                usuario sin privilegios (uptime, df -h, ip a…). Lista aquí solo lo que de verdad
+                necesita privilegio (ej. docker ps) — se autoriza vía sudoers, nada más.
               </p>
               <Textarea
                 className="bg-zinc-800 border-zinc-700 text-zinc-100 placeholder-zinc-600 font-mono text-xs resize-none"
-                placeholder="/usr/bin/uptime"
-                rows={6}
-                value={form.allowed_commands}
-                onChange={(e) => setForm((f) => ({ ...f, allowed_commands: e.target.value }))}
+                placeholder="/usr/bin/docker ps"
+                rows={4}
+                value={form.sudo_commands}
+                onChange={(e) => setForm((f) => ({ ...f, sudo_commands: e.target.value }))}
               />
             </div>
             <Button

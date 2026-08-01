@@ -105,48 +105,54 @@ Diseño concreto:
   rotar y redistribuir en todos los demás — solo se borra su directorio de
   claves (`DELETE /api/infra-targets/{id}` lo hace automáticamente).
 - `GET /api/infra-targets/{id}/setup-commands` genera el bloque de comandos
-  a pegar en el host de destino (crear usuario, `.ssh`, allowlist vía
-  sudoers, línea de `authorized_keys` con forced command) — la única parte
-  que sigue siendo manual por diseño explícito del propietario: AgentOS
-  nunca hace SSH a sus propios contenedores para provisionar el lado del
-  host, y la clave se instala escribiendo `authorized_keys` directamente
-  como root en el propio host (no con `ssh-copy-id`, que necesitaría poder
+  a pegar en el host de destino (crear usuario, `.ssh`, sudoers solo para lo
+  que necesita privilegio, línea de `authorized_keys`) — la única parte que
+  sigue siendo manual por diseño explícito del propietario: AgentOS nunca
+  hace SSH a sus propios contenedores para provisionar el lado del host, y
+  la clave se instala escribiendo `authorized_keys` directamente como root
+  en el propio host (no con `ssh-copy-id`, que necesitaría poder
   autenticarse ya como ese usuario — imposible para una cuenta nueva sin
   password que arranca solo con esta clave).
-- En cada host gestionado (`InfraTarget`), la clave pública se instala con un
-  **forced command** en `authorized_keys` que delega en `sudo`:
+- **Sin forced-command ni allowlist de comandos a nivel de SSH.** El usuario
+  SSH dedicado (`agentos`) corre en su scope normal de usuario Linux sin
+  privilegios especiales — puede pedir cualquier comando por SSH, igual que
+  cualquier login normal. El límite de seguridad real es "qué puede hacer
+  este usuario Unix concreto" (sin escritura fuera de su home, sin grupos
+  privilegiados), no una lista cerrada de strings permitidos: la
+  responsabilidad de acotar qué hace el agente es del propietario del host,
+  no de un wrapper de AgentOS fingiendo hacerlo por él.
   ```
-  command="sudo -n -- $SSH_ORIGINAL_COMMAND",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA... agentos-infra
+  no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA... agentos-infra
   ```
-  El allowlist de qué puede ejecutar el agente vive en
-  `/etc/sudoers.d/agentos-infra` (un `Cmnd_Alias` con match exacto de
-  comando+argumentos), no en un script casero parseando
-  `$SSH_ORIGINAL_COMMAND` — sudo ya trae ese matching probado, con logging
-  y auditoría gratis (`sudo -l -U <user>`, `/var/log/auth.log`). La
-  expansión sin comillas de `$SSH_ORIGINAL_COMMAND` hace *word-splitting*
-  pero nunca re-parsea operadores de shell (`;`, `|`, `&&`) como sintaxis
-  ejecutable — un intento tipo `"uptime; rm -rf /"` llega a sudo como un
-  único comando inexistente (`uptime;`) y sudo lo rechaza por no matchear
-  ningún `Cmnd_Alias`, sin necesitar que el wrapper valide nada él mismo.
-- `InfraTarget.allowed_commands` (lista de strings, editable por-host desde
-  el frontend) es la fuente de verdad de ese `Cmnd_Alias` — cada host puede
-  autorizar más o menos comandos según lo que necesite (un host con Docker
-  puede permitir `docker ps`; uno sin él, no). Se siembra con una lista por
-  defecto de solo lectura al crear el target y se inyecta también en el
-  contexto del agente (`## InfraTarget` en el system prompt) para que sepa
-  de antemano qué puede ejecutar, en vez de descubrirlo a base de intentos
-  rechazados.
+  Las opciones que sí se mantienen en `authorized_keys` son restricciones de
+  *canal* SSH (no reenvío de puertos, no X11, no agent forwarding, sin pty)
+  — no tienen nada que ver con qué comandos se pueden pedir, solo evitan que
+  la clave se use para pivotar a otros usos del protocolo SSH que este caso
+  de uso no necesita.
+- **`sudo` solo para el subconjunto que de verdad necesita privilegio.**
+  `InfraTarget.sudo_commands` (lista de strings, editable por-host) es la
+  fuente de verdad de un `Cmnd_Alias` en `/etc/sudoers.d/agentos-infra`
+  (`agentos ALL=(root) NOPASSWD: AGENTOS_SUDO`), validado con `visudo -cf`
+  antes de instalarse. El caso canónico es `docker ps`: la alternativa
+  (meter a `agentos` en el grupo `docker`) equivale a darle root — ese
+  grupo puede montar el filesystem del host vía un contenedor. Con sudo
+  acotado a comandos+argumentos exactos, solo se concede esa operación
+  puntual. Cada host puede necesitar un subconjunto distinto (uno con
+  Docker lo lista, uno sin él no necesita nada en sudoers en absoluto). Se
+  siembra con una lista por defecto al crear el target y se inyecta en el
+  contexto del agente (`## InfraTarget` en el system prompt) junto con la
+  aclaración de que todo lo demás corre en su scope normal sin `sudo`.
 - Para `phase:infra-agents-2` (`infra-deployer`, ver sección 3), la extensión
   natural es un segundo `Cmnd_Alias` en el mismo `sudoers.d` (p. ej.
   `AGENTOS_DEPLOY`) con las operaciones mutantes acotadas (`docker compose
   pull`, `docker compose up -d`, nunca `rm -rf` ni edición arbitraria de
   ficheros de sistema), habilitado solo cuando el run está en modo `apply`
   aprobado — no se diseña el mecanismo de activación ahora (YAGNI), pero el
-  campo `allowed_commands` por-host ya es el sitio natural donde vivirá.
+  campo `sudo_commands` por-host ya es el sitio natural donde vivirá.
 - El socket de Docker (`/var/run/docker.sock`) sigue montado solo para
   `vuln_scan`, sin cambios — los agentes de infraestructura no lo tocan, todo
-  su alcance sobre Docker remoto pasa por SSH + el allowlist del host de
-  destino, no por acceso directo al socket del propio AgentOS.
+  su alcance sobre Docker remoto pasa por SSH (scope normal del usuario +
+  sudo acotado), no por acceso directo al socket del propio AgentOS.
 
 ## 3. ¿El deployer actúa solo o siempre pide confirmación?
 
@@ -237,8 +243,17 @@ docker-compose.dev.yml
 
 ## Riesgos y guardrails (resumen)
 
-- Sin allowlist en el host de destino, el system prompt es la única barrera —
-  insuficiente. El allowlist vive en el target, no solo en el prompt.
+- **Decisión explícita del propietario**: no hay allowlist de comandos a
+  nivel de host para `infra-architect` — el usuario SSH corre en su scope
+  normal sin privilegios, y esa es la barrera (no una lista cerrada de
+  strings). Es una elección consciente asumida por el propietario, no un
+  descuido: es su propia infraestructura, y el riesgo real de un agente
+  solo-lectura mal configurado es acotado por los permisos Unix del usuario
+  dedicado, no por AgentOS fingiendo controlar cada comando. Donde sí hay
+  una barrera dura e infranqueable por el modelo es en lo que necesita
+  privilegio: `sudo` solo funciona para el `Cmnd_Alias` exacto configurado
+  en `sudoers.d`, cualquier otro intento de `sudo` se rechaza en el host,
+  sin depender del criterio del agente.
 - Sin split plan/apply, un "modo dry-run" basado solo en instrucciones de
   prompt es tan confiable como pedirle educadamente al modelo que no se
   equivoque — no es una barrera real. El split plan/apply mueve la barrera a
