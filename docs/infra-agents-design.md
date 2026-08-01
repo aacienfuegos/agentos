@@ -105,26 +105,44 @@ Diseño concreto:
   rotar y redistribuir en todos los demás — solo se borra su directorio de
   claves (`DELETE /api/infra-targets/{id}` lo hace automáticamente).
 - `GET /api/infra-targets/{id}/setup-commands` genera el bloque de comandos
-  a pegar en el host de destino (crear usuario, `.ssh`, script de allowlist,
-  línea de `authorized_keys` con forced command) — la única parte que sigue
-  siendo manual por diseño explícito del propietario: AgentOS nunca hace SSH
-  a sus propios contenedores para provisionar el lado del host.
+  a pegar en el host de destino (crear usuario, `.ssh`, allowlist vía
+  sudoers, línea de `authorized_keys` con forced command) — la única parte
+  que sigue siendo manual por diseño explícito del propietario: AgentOS
+  nunca hace SSH a sus propios contenedores para provisionar el lado del
+  host, y la clave se instala escribiendo `authorized_keys` directamente
+  como root en el propio host (no con `ssh-copy-id`, que necesitaría poder
+  autenticarse ya como ese usuario — imposible para una cuenta nueva sin
+  password que arranca solo con esta clave).
 - En cada host gestionado (`InfraTarget`), la clave pública se instala con un
-  **forced command** en `authorized_keys`:
+  **forced command** en `authorized_keys` que delega en `sudo`:
   ```
-  command="/opt/agentos-guard/allowlist.sh",no-port-forwarding,no-X11-forwarding,no-agent-forwarding ssh-ed25519 AAAA... agentos-infra
+  command="sudo -n -- $SSH_ORIGINAL_COMMAND",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA... agentos-infra
   ```
-  `allowlist.sh` ignora el comando que pide el cliente SSH
-  (`$SSH_ORIGINAL_COMMAND`) salvo que matchee una lista explícita de comandos
-  permitidos para ese target y ese modo. Así el control de qué se puede
-  ejecutar vive en el host de destino, no solo en el system prompt del
-  agente — un jailbreak del modelo no puede escapar del allowlist.
-- Dos listas de allowlist por target: `advisory` (solo lectura: `docker ps`,
-  `docker compose ps`, `df -h`, `uptime`, `journalctl --no-pager -n 200`,
-  `cat` sobre una lista fija de ficheros de estado) y `deploy` (añade
-  operaciones mutantes explícitas y acotadas: `docker compose pull`,
-  `docker compose up -d`, nunca `rm -rf`, nunca edición de ficheros de sistema
-  arbitraria).
+  El allowlist de qué puede ejecutar el agente vive en
+  `/etc/sudoers.d/agentos-infra` (un `Cmnd_Alias` con match exacto de
+  comando+argumentos), no en un script casero parseando
+  `$SSH_ORIGINAL_COMMAND` — sudo ya trae ese matching probado, con logging
+  y auditoría gratis (`sudo -l -U <user>`, `/var/log/auth.log`). La
+  expansión sin comillas de `$SSH_ORIGINAL_COMMAND` hace *word-splitting*
+  pero nunca re-parsea operadores de shell (`;`, `|`, `&&`) como sintaxis
+  ejecutable — un intento tipo `"uptime; rm -rf /"` llega a sudo como un
+  único comando inexistente (`uptime;`) y sudo lo rechaza por no matchear
+  ningún `Cmnd_Alias`, sin necesitar que el wrapper valide nada él mismo.
+- `InfraTarget.allowed_commands` (lista de strings, editable por-host desde
+  el frontend) es la fuente de verdad de ese `Cmnd_Alias` — cada host puede
+  autorizar más o menos comandos según lo que necesite (un host con Docker
+  puede permitir `docker ps`; uno sin él, no). Se siembra con una lista por
+  defecto de solo lectura al crear el target y se inyecta también en el
+  contexto del agente (`## InfraTarget` en el system prompt) para que sepa
+  de antemano qué puede ejecutar, en vez de descubrirlo a base de intentos
+  rechazados.
+- Para `phase:infra-agents-2` (`infra-deployer`, ver sección 3), la extensión
+  natural es un segundo `Cmnd_Alias` en el mismo `sudoers.d` (p. ej.
+  `AGENTOS_DEPLOY`) con las operaciones mutantes acotadas (`docker compose
+  pull`, `docker compose up -d`, nunca `rm -rf` ni edición arbitraria de
+  ficheros de sistema), habilitado solo cuando el run está en modo `apply`
+  aprobado — no se diseña el mecanismo de activación ahora (YAGNI), pero el
+  campo `allowed_commands` por-host ya es el sitio natural donde vivirá.
 - El socket de Docker (`/var/run/docker.sock`) sigue montado solo para
   `vuln_scan`, sin cambios — los agentes de infraestructura no lo tocan, todo
   su alcance sobre Docker remoto pasa por SSH + el allowlist del host de
@@ -137,14 +155,14 @@ es un principio general del proyecto (`~/.claude/CLAUDE.md`: "Deploy vía
 Dockhand, no scripts directos"); se traduce al modelo de runs así:
 
 - Un run de `infra-deployer` se lanza siempre en modo **`plan`**: el
-  `allowlist.sh` del target en ese modo solo admite subcomandos de solo
+  `Cmnd_Alias` de sudoers activo en ese modo solo admite subcomandos de solo
   lectura/dry-run (`docker compose config`, `docker compose pull --dry-run`
   si el motor lo soporta, diffs de ficheros). El agente produce un plan en
   markdown (qué cambiaría y por qué) que se guarda como `Run.output`.
 - El frontend muestra el plan con un botón **"Aprobar despliegue"**. Aprobar
   crea un segundo `Run`, con `mode=apply` y un nuevo campo
   `Run.approved_from_run_id` apuntando al run de plan. Solo en este segundo
-  run el `allowlist.sh` del target admite los comandos mutantes.
+  run se habilita el `Cmnd_Alias` con los comandos mutantes.
 - Sin aprobación explícita, el plan expira (p. ej. 30 min) y no hay forma de
   ejecutar el apply — no existe un "auto-apply" ni siquiera como opción de
   configuración, para no reproducir el error de exponer un botón que parezca

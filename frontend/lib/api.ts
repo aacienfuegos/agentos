@@ -136,6 +136,7 @@ export interface InfraTarget {
   known_hosts_entry: string | null;
   host_key_fingerprint: string | null;
   ssh_public_key: string | null;
+  allowed_commands: string[];
   created_at: string;
   updated_at: string;
 }

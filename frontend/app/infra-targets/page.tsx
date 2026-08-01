@@ -7,7 +7,27 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-const emptyForm = { id: "", name: "", host: "", ssh_user: "agentos", ssh_port: "22", notes: "" };
+const DEFAULT_ALLOWED_COMMANDS = [
+  "/usr/bin/uptime",
+  "/usr/bin/uname -a",
+  "/usr/bin/df -h",
+  "/usr/bin/free -h",
+  "/usr/sbin/ip a",
+  "/usr/bin/docker ps",
+  "/usr/bin/docker ps -a",
+  "/usr/bin/systemctl status",
+  "/usr/bin/journalctl --no-pager -n 100",
+];
+
+const emptyForm = {
+  id: "",
+  name: "",
+  host: "",
+  ssh_user: "agentos",
+  ssh_port: "22",
+  notes: "",
+  allowed_commands: DEFAULT_ALLOWED_COMMANDS.join("\n"),
+};
 
 export default function InfraTargetsPage() {
   const [targets, setTargets] = useState<InfraTarget[]>([]);
@@ -38,6 +58,7 @@ export default function InfraTargetsPage() {
       ssh_user: target.ssh_user,
       ssh_port: String(target.ssh_port),
       notes: target.notes,
+      allowed_commands: target.allowed_commands.join("\n"),
     });
   };
 
@@ -56,6 +77,10 @@ export default function InfraTargetsPage() {
         ssh_user: form.ssh_user,
         ssh_port: Number(form.ssh_port) || 22,
         notes: form.notes,
+        allowed_commands: form.allowed_commands
+          .split("\n")
+          .map((c) => c.trim())
+          .filter(Boolean),
       };
       if (editing) {
         await api.infraTargets.update(editing.id, payload);
@@ -230,6 +255,28 @@ export default function InfraTargetsPage() {
                 />
               </div>
             )}
+            {editing?.ssh_public_key && (
+              <div className="space-y-1.5">
+                <Label className="text-zinc-300 text-sm">Clave pública SSH (generada automáticamente)</Label>
+                <div className="flex gap-2">
+                  <input
+                    readOnly
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono text-zinc-400"
+                    value={editing.ssh_public_key}
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                  />
+                  <button
+                    onClick={() => navigator.clipboard.writeText(editing.ssh_public_key ?? "")}
+                    className="shrink-0 text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                  >
+                    Copiar
+                  </button>
+                </div>
+                <p className="text-xs text-zinc-600">
+                  No es secreta — puedes pegarla en cualquier host adicional sin recrear este target.
+                </p>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label className="text-zinc-300 text-sm">Nombre</Label>
               <input
@@ -279,6 +326,20 @@ export default function InfraTargetsPage() {
                 onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
               />
             </div>
+            <div className="space-y-1.5">
+              <Label className="text-zinc-300 text-sm">Comandos permitidos (sudoers, uno por línea)</Label>
+              <p className="text-xs text-zinc-600">
+                Se instalan con forced-command en el host vía &ldquo;Comandos&rdquo;. El agente solo
+                puede ejecutar exactamente esto — ajusta según lo que necesites permitir en este host.
+              </p>
+              <Textarea
+                className="bg-zinc-800 border-zinc-700 text-zinc-100 placeholder-zinc-600 font-mono text-xs resize-none"
+                placeholder="/usr/bin/uptime"
+                rows={6}
+                value={form.allowed_commands}
+                onChange={(e) => setForm((f) => ({ ...f, allowed_commands: e.target.value }))}
+              />
+            </div>
             <Button
               className="w-full bg-violet-600 hover:bg-violet-700"
               onClick={handleSave}
@@ -294,14 +355,14 @@ export default function InfraTargetsPage() {
         open={setupCommands !== null}
         onOpenChange={(open) => { if (!open) { setSetupCommands(null); setCopied(false); } }}
       >
-        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100 max-w-2xl">
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100 max-w-[calc(100%-2rem)] sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Comandos de instalación — {setupCommands?.id}</DialogTitle>
           </DialogHeader>
           <p className="text-xs text-zinc-500">
             Ejecuta esto en el host de destino (no en AgentOS) para dar acceso al agente.
           </p>
-          <pre className="bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-xs text-zinc-300 overflow-x-auto whitespace-pre-wrap max-h-96">
+          <pre className="bg-zinc-950 border border-zinc-800 rounded-lg p-4 text-sm text-zinc-300 overflow-x-auto whitespace-pre-wrap max-h-[70vh]">
             {setupCommands?.text}
           </pre>
           <Button

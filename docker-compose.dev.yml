@@ -75,8 +75,9 @@ services:
     command: uv run watchfiles "python -m arq agentos.worker.tasks.WorkerSettings" agentos
 
   # Objetivo SSH de solo lectura para probar infra-architect en local, sin tocar
-  # infraestructura real. Forced-command allowlist en authorized_keys — el agente
-  # solo puede ejecutar diagnósticos de lectura (ver scripts/infra-dev/allowed-commands.sh).
+  # infraestructura real. authorized_keys fuerza `sudo -n -- $SSH_ORIGINAL_COMMAND`;
+  # sudoers (instalado por scripts/infra-dev/sync-dev-target-key.sh) es quien
+  # decide qué comandos puede ejecutar el agente — ver docs/infra-agents-design.md.
   infra-dev-target:
     image: linuxserver/openssh-server:latest
     restart: unless-stopped
@@ -87,7 +88,6 @@ services:
       - PASSWORD_ACCESS=false
     volumes:
       - ./scripts/infra-dev/authorized_keys:/config/.ssh/authorized_keys:ro
-      - ./scripts/infra-dev/allowed-commands.sh:/config/allowed-commands.sh:ro
     ports:
       - "2222:2222"
 

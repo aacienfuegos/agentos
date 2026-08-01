@@ -17,32 +17,24 @@ from ..models import InfraTarget
 router = APIRouter()
 SessionDep = Annotated[Session, Depends(get_session)]
 
-# Forced-command wrapper que se instala en el host de destino. Solo lectura
-# deliberadamente — el control de qué se puede ejecutar vive en el host
-# gestionado, no solo en el system prompt del agente (ver docs/infra-agents-design.md).
-_ALLOWED_COMMANDS_SCRIPT = """#!/bin/sh
-set -eu
-
-cmd="${SSH_ORIGINAL_COMMAND:-}"
-
-case "$cmd" in
-    "uptime"|\\
-    "uname -a"|\\
-    "df -h"|\\
-    "free -h"|\\
-    "ip a"|\\
-    "docker ps"|\\
-    "docker ps -a"|\\
-    "systemctl status"|\\
-    "journalctl --no-pager -n 100")
-        exec $cmd
-        ;;
-    *)
-        echo "agentos-infra: comando no permitido: $cmd" >&2
-        exit 1
-        ;;
-esac
-"""
+# Comandos de diagnóstico de solo lectura con los que se siembra un target
+# nuevo — editable después por target vía PUT (InfraTarget.allowed_commands),
+# así cada host puede tener más o menos permisos. La lista vive en sudoers
+# (mecanismo estándar de Linux para "usuario X solo puede ejecutar estos
+# comandos exactos como root"), no en un script casero parseando
+# $SSH_ORIGINAL_COMMAND — sudo ya trae matching de argumentos probado y
+# logging/auditoría gratis (`sudo -l -U <user>`, /var/log/auth.log).
+_DEFAULT_ALLOWED_COMMANDS = [
+    "/usr/bin/uptime",
+    "/usr/bin/uname -a",
+    "/usr/bin/df -h",
+    "/usr/bin/free -h",
+    "/usr/sbin/ip a",
+    "/usr/bin/docker ps",
+    "/usr/bin/docker ps -a",
+    "/usr/bin/systemctl status",
+    "/usr/bin/journalctl --no-pager -n 100",
+]
 
 
 def _key_dir(target_id: str) -> Path:
@@ -75,8 +67,11 @@ def _build_setup_commands(target: InfraTarget) -> str:
     nunca hace SSH a sus propios contenedores para esto (ver CLAUDE.md:
     provisión de usuario/clave en el host nuevo queda fuera del alcance
     automatizable, solo la parte del lado AgentOS se automatiza)."""
+    if not target.allowed_commands:
+        raise HTTPException(400, "El target no tiene comandos permitidos configurados")
     user = shlex.quote(target.ssh_user)
     home = f"/home/{target.ssh_user}"
+    cmnd_alias = ", ".join(target.allowed_commands)
     return f"""# Ejecutar en el host de destino ({target.host}), no en AgentOS.
 
 # 1. Crear el usuario dedicado (si no existe)
@@ -86,14 +81,21 @@ sudo useradd -m -s /bin/bash {user} 2>/dev/null || true
 sudo -u {user} mkdir -p {home}/.ssh
 sudo chmod 700 {home}/.ssh
 
-# 3. Instalar el script de allowlist (solo permite comandos de solo lectura)
-sudo tee {home}/allowed-commands.sh > /dev/null <<'EOF'
-{_ALLOWED_COMMANDS_SCRIPT}EOF
-sudo chmod +x {home}/allowed-commands.sh
-sudo chown {user}:{user} {home}/allowed-commands.sh
+# 3. Autorizar SOLO los comandos de diagnóstico configurados para este target
+#    (Infraestructura > Editar > "Comandos permitidos") vía sudoers, validado
+#    con visudo antes de instalarlo para no dejar sudoers roto. Ajusta las
+#    rutas de los binarios si tu distro los tiene en otro sitio (`which docker`).
+cat <<'EOF' > /tmp/agentos-infra-sudoers
+Cmnd_Alias AGENTOS_DIAG = {cmnd_alias}
+{target.ssh_user} ALL=(root) NOPASSWD: AGENTOS_DIAG
+EOF
+sudo visudo -cf /tmp/agentos-infra-sudoers
+sudo install -o root -g root -m 440 /tmp/agentos-infra-sudoers /etc/sudoers.d/agentos-infra
+rm /tmp/agentos-infra-sudoers
 
-# 4. Instalar la clave pública con forced command (solo puede ejecutar lo del allowlist)
-echo 'command="{home}/allowed-commands.sh",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty {target.ssh_public_key}' | sudo tee -a {home}/.ssh/authorized_keys > /dev/null
+# 4. Instalar la clave pública: el forced command delega en sudo, que aplica
+#    el allowlist de arriba (rechaza cualquier comando fuera de la lista)
+echo 'command="sudo -n -- $SSH_ORIGINAL_COMMAND",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty {target.ssh_public_key}' | sudo tee -a {home}/.ssh/authorized_keys > /dev/null
 sudo chmod 600 {home}/.ssh/authorized_keys
 sudo chown {user}:{user} {home}/.ssh/authorized_keys
 """
@@ -106,6 +108,7 @@ class InfraTargetCreate(BaseModel):
     ssh_user: str = Field(min_length=1, max_length=64)
     ssh_port: int = Field(default=22, ge=1, le=65535)
     notes: str = Field(default="", max_length=2000)
+    allowed_commands: list[str] | None = None
 
 
 class InfraTargetUpdate(BaseModel):
@@ -114,6 +117,7 @@ class InfraTargetUpdate(BaseModel):
     ssh_user: str | None = Field(default=None, min_length=1, max_length=64)
     ssh_port: int | None = Field(default=None, ge=1, le=65535)
     notes: str | None = Field(default=None, max_length=2000)
+    allowed_commands: list[str] | None = None
 
 
 @router.get("")
@@ -125,7 +129,8 @@ def list_infra_targets(session: SessionDep) -> list[InfraTarget]:
 def create_infra_target(data: InfraTargetCreate, session: SessionDep) -> InfraTarget:
     if session.get(InfraTarget, data.id):
         raise HTTPException(400, f"Infra target '{data.id}' already exists")
-    target = InfraTarget(**data.model_dump())
+    target = InfraTarget(**data.model_dump(exclude={"allowed_commands"}))
+    target.allowed_commands = data.allowed_commands if data.allowed_commands is not None else list(_DEFAULT_ALLOWED_COMMANDS)
     target.ssh_public_key = _generate_keypair(target.id)
     session.add(target)
     session.commit()

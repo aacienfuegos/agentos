@@ -174,6 +174,7 @@ async def test_run_agent_task_infra_target_context_injected(db_session):
         notes="Nodo de pruebas",
         known_hosts_entry="homelab-dev.internal ssh-ed25519 AAAAtest",
         host_key_fingerprint="256 SHA256:test test.internal (ED25519)",
+        allowed_commands=["/usr/bin/uptime", "/usr/bin/docker ps"],
     )
     db_session.add(target)
 
@@ -212,6 +213,8 @@ async def test_run_agent_task_infra_target_context_injected(db_session):
     assert f"-i {_tasks_module.settings.infra_keys_path}/homelab-dev/id_ed25519" in prompt
     assert "-o StrictHostKeyChecking=yes" in prompt
     assert "-p 2222 agentos@homelab-dev.internal" in prompt
+    assert "Comandos permitidos en este host" in prompt
+    assert "/usr/bin/uptime, /usr/bin/docker ps" in prompt
     assert "Nodo de pruebas" in prompt
     assert "Eres un arquitecto de infraestructura" in prompt
 

@@ -122,9 +122,12 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
                     f"-o UserKnownHostsFile={known_hosts_path} -o StrictHostKeyChecking=yes "
                     f"-p {target.ssh_port} {target.ssh_user}@{target.host}"
                 )
+                allowed = ", ".join(target.allowed_commands) if target.allowed_commands else "(ninguno configurado)"
                 target_ctx = (
                     f"## InfraTarget: {target.name} (id: {target.id})\n"
                     f"Conéctate con: `{ssh_cmd} <comando>`\n"
+                    f"Comandos permitidos en este host (sudoers rechaza cualquier otro, "
+                    f"no pierdas turnos probando cosas fuera de esta lista): {allowed}\n"
                     f"Notas: {target.notes or '(sin notas)'}\n"
                 )
                 agent.system_prompt = target_ctx + "\n---\n\n" + agent.system_prompt

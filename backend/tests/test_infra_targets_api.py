@@ -53,6 +53,22 @@ def test_delete_infra_target_removes_ssh_keys(app_client: TestClient):
     assert not key_dir.exists()
 
 
+def test_create_infra_target_seeds_default_allowed_commands(app_client: TestClient):
+    """Sin especificar allowed_commands, el target debe recibir una lista por
+    defecto útil (editable después por-host), no quedarse vacío."""
+    response = app_client.post("/api/infra-targets", json=TARGET_PAYLOAD)
+    commands = response.json()["allowed_commands"]
+    assert len(commands) > 0
+    assert "/usr/bin/uptime" in commands
+
+
+def test_create_infra_target_custom_allowed_commands(app_client: TestClient):
+    """Cada host puede tener más o menos permisos que otro."""
+    payload = {**TARGET_PAYLOAD, "allowed_commands": ["/usr/bin/uptime"]}
+    response = app_client.post("/api/infra-targets", json=payload)
+    assert response.json()["allowed_commands"] == ["/usr/bin/uptime"]
+
+
 def test_get_infra_target_setup_commands(app_client: TestClient):
     app_client.post("/api/infra-targets", json=TARGET_PAYLOAD)
     response = app_client.get("/api/infra-targets/test-target/setup-commands")
@@ -61,6 +77,22 @@ def test_get_infra_target_setup_commands(app_client: TestClient):
     assert "useradd" in commands
     assert "authorized_keys" in commands
     assert "ssh-ed25519 " in commands
+    # Permisos vía sudoers (validado con visudo antes de instalar), no un
+    # script casero parseando $SSH_ORIGINAL_COMMAND.
+    assert "Cmnd_Alias AGENTOS_DIAG" in commands
+    assert "visudo -cf" in commands
+    assert "/etc/sudoers.d/agentos-infra" in commands
+    assert 'command="sudo -n -- $SSH_ORIGINAL_COMMAND"' in commands
+    assert "/usr/bin/uptime" in commands
+
+
+def test_get_infra_target_setup_commands_no_allowed_commands(app_client: TestClient):
+    """Sin comandos permitidos configurados no se puede generar un Cmnd_Alias
+    vacío (sudoers inválido) — debe fallar con un mensaje claro."""
+    payload = {**TARGET_PAYLOAD, "allowed_commands": []}
+    app_client.post("/api/infra-targets", json=payload)
+    response = app_client.get("/api/infra-targets/test-target/setup-commands")
+    assert response.status_code == 400
 
 
 def test_get_infra_target_setup_commands_not_found(app_client: TestClient):
