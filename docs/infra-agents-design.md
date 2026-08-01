@@ -113,22 +113,55 @@ Diseño concreto:
   en el propio host (no con `ssh-copy-id`, que necesitaría poder
   autenticarse ya como ese usuario — imposible para una cuenta nueva sin
   password que arranca solo con esta clave).
-- **Sin forced-command ni allowlist de comandos a nivel de SSH.** El usuario
-  SSH dedicado (`agentos`) corre en su scope normal de usuario Linux sin
-  privilegios especiales — puede pedir cualquier comando por SSH, igual que
-  cualquier login normal. El límite de seguridad real es "qué puede hacer
-  este usuario Unix concreto" (sin escritura fuera de su home, sin grupos
-  privilegiados), no una lista cerrada de strings permitidos: la
-  responsabilidad de acotar qué hace el agente es del propietario del host,
-  no de un wrapper de AgentOS fingiendo hacerlo por él.
+- **El forced-command es un wrapper de auditoría + denylist, no un
+  allowlist.** El usuario SSH dedicado (`agentos`) corre en su scope normal
+  de usuario Linux sin privilegios especiales — el límite de seguridad real
+  sigue siendo "qué puede hacer este usuario Unix concreto" (sin escritura
+  fuera de su home, sin grupos privilegiados), no una lista cerrada de
+  comandos permitidos. Lo que sí instala `setup-commands` es
+  `/usr/local/bin/agentos-audit-wrapper.sh`
+  (`api/infra_targets.py::_build_wrapper_script`), referenciado como
+  forced-command:
   ```
-  no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA... agentos-infra
+  restrict,command="/usr/local/bin/agentos-audit-wrapper.sh" ssh-ed25519 AAAA... agentos-infra
   ```
-  Las opciones que sí se mantienen en `authorized_keys` son restricciones de
-  *canal* SSH (no reenvío de puertos, no X11, no agent forwarding, sin pty)
-  — no tienen nada que ver con qué comandos se pueden pedir, solo evitan que
-  la clave se use para pivotar a otros usos del protocolo SSH que este caso
-  de uso no necesita.
+  `restrict` (OpenSSH ≥7.2) equivale a
+  `no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty,no-user-rc`
+  de una vez — restricciones de *canal* SSH, no de qué comandos se pueden
+  pedir. El wrapper hace dos cosas baratas y **deja pasar todo lo demás
+  igual que si no existiera**:
+  1. **Audita** cada comando recibido vía `logger -t agentos-ssh` (al
+     syslog/journal del host, revisable con `journalctl -t agentos-ssh`) —
+     nunca a un fichero propio: el wrapper corre sin privilegios y no
+     podría escribir en uno propiedad de root, y syslog ya trae rotación
+     gratis sin necesidad de una `logrotate.d` a medida.
+  2. **Bloquea una denylist best-effort** (`_DENYLIST_PATTERN`) de patrones
+     catastróficos conocidos: `rm -rf`/`-fr` (en bloque, no solo contra `/`
+     — `infra-architect` no tiene motivo legítimo para ejecutar ninguno,
+     así que no vale la pena intentar distinguir rutas "seguras"), `mkfs`,
+     `dd` contra un block device, fork bombs (cualquier nombre de función,
+     no solo la forma clásica `:(){ :|:& };:`), `shutdown`/`reboot`/
+     `poweroff`/`halt`, parar/deshabilitar servicios vía `systemctl`,
+     `iptables -F`/`nft flush`, redirección a `/dev/sd*`/`nvme*`/`vd*`, y
+     `chmod -R`. **No es una garantía** — un LLM o una ofuscación
+     (variables, comandos codificados) pueden esquivarla; es una red de
+     seguridad barata contra errores obvios, no el control principal. El
+     agente reconoce el string `BLOCKED: patron destructivo detectado` en
+     stderr (ver system prompt de `infra-architect`) y sabe que es un
+     rechazo deliberado del host, no un fallo a reintentar.
+- **`from="<ip>"` opcional** (`settings.agentos_source_ip`, env var
+  `AGENTOS_SOURCE_IP`, vacío por defecto): si se configura, se antepone a
+  la línea de `authorized_keys` y sshd rechaza la conexión — antes de
+  verificar la firma — si no viene de esa IP/rango. Protege
+  específicamente contra una clave privada filtrada y usada desde fuera de
+  la red del propietario; no protege si lo que se compromete es el propio
+  `worker` de AgentOS (el tráfico seguiría saliendo de la IP legítima). No
+  se auto-detecta: la IP del contenedor no sirve (Docker hace NAT/masquerade
+  de la salida, el target ve la IP del host físico, no la del contenedor),
+  y un lookup de "IP pública" tampoco vale para targets en LAN (Proxmox,
+  Zeus) que ven conectarse desde una IP local o de Tailscale, no la pública.
+  Solo el propietario conoce su topología de red — se configura a mano,
+  igual que `ADMIN_PASSWORD` o `GITHUB_TOKEN`.
 - **`sudo` solo para el subconjunto que de verdad necesita privilegio.**
   `InfraTarget.sudo_commands` (lista de strings, editable por-host) es la
   fuente de verdad de un `Cmnd_Alias` en `/etc/sudoers.d/agentos-infra`
@@ -246,7 +279,10 @@ docker-compose.dev.yml
 - **Decisión explícita del propietario**: no hay allowlist de comandos a
   nivel de host para `infra-architect` — el usuario SSH corre en su scope
   normal sin privilegios, y esa es la barrera (no una lista cerrada de
-  strings). Es una elección consciente asumida por el propietario, no un
+  strings). El wrapper de forced-command audita y bloquea una denylist
+  best-effort de patrones catastróficos, pero deja pasar todo lo demás: es
+  una red de seguridad barata, no una restricción real de qué puede pedir
+  el agente. Es una elección consciente asumida por el propietario, no un
   descuido: es su propia infraestructura, y el riesgo real de un agente
   solo-lectura mal configurado es acotado por los permisos Unix del usuario
   dedicado, no por AgentOS fingiendo controlar cada comando. Donde sí hay

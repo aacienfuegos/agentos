@@ -30,6 +30,61 @@ _DEFAULT_SUDO_COMMANDS = [
     "/usr/bin/journalctl --no-pager -n 100",
 ]
 
+_WRAPPER_PATH = "/usr/local/bin/agentos-audit-wrapper.sh"
+
+# Denylist best-effort para el wrapper de forced-command: bloquea patrones
+# catastróficos conocidos (no acota por ruta — infra-architect es solo
+# lectura y no tiene motivo legítimo para ejecutar NINGUNO de estos, así que
+# se deniegan en bloque en vez de intentar distinguir rutas "seguras" de
+# "peligrosas", que es donde falla un denylist recortado). No es una
+# garantía: un LLM u ofuscación (variables, comandos codificados) pueden
+# esquivarla — la barrera dura de verdad es que este usuario no tiene
+# privilegios; esto es una red de seguridad barata contra errores obvios,
+# no el control principal (ver docs/infra-agents-design.md).
+_DENYLIST_PATTERN = (
+    r"rm[[:space:]]+-[a-zA-Z]*r[a-zA-Z]*f"          # rm -rf (cualquier orden de flags)
+    r"|rm[[:space:]]+-[a-zA-Z]*f[a-zA-Z]*r"         # rm -fr
+    r"|mkfs"
+    r"|dd[[:space:]]+.*[io]f=/dev/"                 # dd hacia/desde un block device
+    r"|[^][:space:]()]+\(\)[[:space:]]*\{[[:space:]]*[^][:space:]()]+[[:space:]]*\|"  # fork bomb, cualquier nombre de función (incluye ":(){ :|:& };:")
+    r"|shutdown|reboot|poweroff|halt"
+    r"|init[[:space:]]+[06]"
+    r"|systemctl[[:space:]]+(stop|disable|mask)"
+    r"|iptables[[:space:]]+-F"
+    r"|nft[[:space:]]+flush"
+    r"|>[[:space:]]*/dev/(sd|nvme|vd)"               # sobreescribir un disco por redirección
+    r"|chmod[[:space:]]+-[a-zA-Z]*R"                # chmod recursivo
+)
+
+
+def _build_wrapper_script() -> str:
+    """Forced-command instalado en el host: NO es un allowlist (eso vive en
+    sudoers para lo que necesita privilegio) — es una capa fail-open con dos
+    trabajos baratos: auditar cada comando (logger a syslog/journal — nunca
+    a un fichero propio, porque el wrapper corre sin privilegios y no podría
+    escribir en uno propiedad de root) y bloquear una denylist best-effort
+    de patrones catastróficos. Todo lo demás pasa igual que si no hubiera
+    wrapper — el scope normal del usuario sigue siendo la barrera real."""
+    return f"""#!/usr/bin/env bash
+set -euo pipefail
+
+CMD="${{SSH_ORIGINAL_COMMAND:-}}"
+
+if [ -z "$CMD" ]; then
+    echo "Solo se permite ejecucion no interactiva de comandos." >&2
+    exit 1
+fi
+
+logger -t agentos-ssh -- "$CMD"
+
+if printf '%s' "$CMD" | grep -Eiq '{_DENYLIST_PATTERN}'; then
+    echo "BLOCKED: patron destructivo detectado" >&2
+    exit 1
+fi
+
+exec bash -c "$CMD"
+"""
+
 
 def _key_dir(target_id: str) -> Path:
     return Path(settings.infra_keys_path) / target_id
@@ -62,21 +117,27 @@ def _build_setup_commands(target: InfraTarget) -> str:
     provisión de usuario/clave en el host nuevo queda fuera del alcance
     automatizable, solo la parte del lado AgentOS se automatiza).
 
-    Sin forced-command: el usuario SSH dedicado corre en su scope normal sin
-    privilegios, sin restricción de qué comandos puede pedir por SSH — el
-    límite real es lo que ese usuario Linux puede hacer. sudo solo entra
-    para el subconjunto de sudo_commands que de verdad necesita privilegio."""
+    El usuario SSH dedicado corre en su scope normal sin privilegios — el
+    límite real es lo que ese usuario Linux puede hacer, no una lista
+    cerrada. El forced-command (wrapper) NO es un allowlist: solo audita
+    (logger/syslog) y bloquea una denylist best-effort de patrones
+    catastróficos, dejando pasar todo lo demás igual que si no existiera.
+    sudo solo entra para el subconjunto de sudo_commands que de verdad
+    necesita privilegio."""
     user = shlex.quote(target.ssh_user)
     home = f"/home/{target.ssh_user}"
+    step = 3
     sudo_block = ""
     if target.sudo_commands:
         cmnd_alias = ", ".join(target.sudo_commands)
         sudo_block = f"""
-# 3. Autorizar SOLO estos comandos concretos vía sudo — todo lo demás el
+# {step}. Autorizar SOLO estos comandos concretos vía sudo — todo lo demás el
 #    agente lo ejecuta directamente en el scope normal de {target.ssh_user},
 #    sin privilegios. Validado con visudo antes de instalar, para no dejar
 #    sudoers roto. Ajusta rutas si tu distro las tiene en otro sitio
-#    (`which docker`).
+#    (`which docker`). El match de sudo es LITERAL (comando+argumentos
+#    exactos) — si el agente construye el comando distinto (otro orden de
+#    flags, uno de más), sudo lo rechaza sin más.
 cat <<'EOF' > /tmp/agentos-infra-sudoers
 Cmnd_Alias AGENTOS_SUDO = {cmnd_alias}
 {target.ssh_user} ALL=(root) NOPASSWD: AGENTOS_SUDO
@@ -85,6 +146,10 @@ sudo visudo -cf /tmp/agentos-infra-sudoers
 sudo install -o root -g root -m 440 /tmp/agentos-infra-sudoers /etc/sudoers.d/agentos-infra
 rm /tmp/agentos-infra-sudoers
 """
+        step += 1
+
+    from_clause = f'from="{settings.agentos_source_ip}",' if settings.agentos_source_ip else ""
+
     return f"""# Ejecutar en el host de destino ({target.host}), no en AgentOS.
 
 # 1. Crear el usuario dedicado (si no existe)
@@ -94,10 +159,18 @@ sudo useradd -m -s /bin/bash {user} 2>/dev/null || true
 sudo -u {user} mkdir -p {home}/.ssh
 sudo chmod 700 {home}/.ssh
 {sudo_block}
-# {"4" if sudo_block else "3"}. Instalar la clave pública — sin forced-command,
-#    el agente opera en el scope normal de {user} (sin privilegios); solo se
-#    restringen capacidades de canal SSH que no necesita.
-echo 'no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty {target.ssh_public_key}' | sudo tee -a {home}/.ssh/authorized_keys > /dev/null
+# {step}. Instalar el wrapper de forced-command: audita cada comando
+#    (logger, no un fichero propio — el usuario no tiene privilegio para
+#    escribir en uno de root) y bloquea una denylist best-effort de
+#    patrones catastróficos. No restringe qué puede pedir el agente más
+#    allá de eso; revisar con `journalctl -t agentos-ssh` en el host.
+cat <<'WRAPPER' | sudo tee {_WRAPPER_PATH} > /dev/null
+{_build_wrapper_script()}WRAPPER
+sudo chmod 755 {_WRAPPER_PATH}
+
+# {step + 1}. Instalar la clave pública con el wrapper como forced-command.
+#    `restrict` desactiva forwarding/X11/agent/pty/user-rc de una vez.{" Origen fijado a " + settings.agentos_source_ip + "." if settings.agentos_source_ip else " Sin restricción de IP de origen (AGENTOS_SOURCE_IP no configurado)."}
+echo '{from_clause}restrict,command="{_WRAPPER_PATH}" {target.ssh_public_key}' | sudo tee -a {home}/.ssh/authorized_keys > /dev/null
 sudo chmod 600 {home}/.ssh/authorized_keys
 sudo chown {user}:{user} {home}/.ssh/authorized_keys
 """

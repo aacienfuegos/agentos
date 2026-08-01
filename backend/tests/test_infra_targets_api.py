@@ -100,18 +100,34 @@ def test_get_infra_target_setup_commands(app_client: TestClient):
     assert "authorized_keys" in commands
     assert "ssh-ed25519 " in commands
     # Permisos vía sudoers (validado con visudo antes de instalar) solo para
-    # el subconjunto que necesita privilegio — sin forced-command en la
-    # clave, el resto corre en el scope normal del usuario.
+    # el subconjunto que necesita privilegio — el resto corre en el scope
+    # normal del usuario, filtrado solo por el wrapper de auditoría+denylist.
     assert "Cmnd_Alias AGENTOS_SUDO" in commands
     assert "visudo -cf" in commands
     assert "/etc/sudoers.d/agentos-infra" in commands
     assert "/usr/bin/docker ps" in commands
-    assert 'command="' not in commands
+    # Wrapper: forced-command con restrict, NO un allowlist — audita
+    # (logger/syslog, nunca un fichero propio) y bloquea una denylist.
+    assert 'restrict,command="/usr/local/bin/agentos-audit-wrapper.sh"' in commands
+    assert "logger -t agentos-ssh" in commands
+    assert "BLOCKED: patron destructivo detectado" in commands
+    assert "from=" not in commands  # sin AGENTOS_SOURCE_IP configurado
+
+
+def test_get_infra_target_setup_commands_with_source_ip(app_client: TestClient):
+    """Con AGENTOS_SOURCE_IP configurado, la línea de authorized_keys
+    restringe también desde qué IP puede usarse la clave."""
+    app_client.post("/api/infra-targets", json=TARGET_PAYLOAD)
+    with patch("agentos.api.infra_targets.settings.agentos_source_ip", "10.0.0.5"):
+        response = app_client.get("/api/infra-targets/test-target/setup-commands")
+    commands = response.json()["commands"]
+    assert 'from="10.0.0.5",restrict,command=' in commands
 
 
 def test_get_infra_target_setup_commands_no_sudo_commands(app_client: TestClient):
     """Sin sudo_commands configurados no se instala sudoers en absoluto — el
-    usuario simplemente corre en su scope normal sin privilegios."""
+    usuario simplemente corre en su scope normal, con el wrapper de
+    auditoría+denylist como única capa (no un allowlist)."""
     payload = {**TARGET_PAYLOAD, "sudo_commands": []}
     app_client.post("/api/infra-targets", json=payload)
     response = app_client.get("/api/infra-targets/test-target/setup-commands")
@@ -119,6 +135,7 @@ def test_get_infra_target_setup_commands_no_sudo_commands(app_client: TestClient
     commands = response.json()["commands"]
     assert "sudoers" not in commands
     assert "authorized_keys" in commands
+    assert "agentos-audit-wrapper.sh" in commands
 
 
 def test_get_infra_target_setup_commands_not_found(app_client: TestClient):

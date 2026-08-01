@@ -214,7 +214,8 @@ async def test_run_agent_task_infra_target_context_injected(db_session):
     assert "-o StrictHostKeyChecking=yes" in prompt
     assert "-p 2222 agentos@homelab-dev.internal" in prompt
     assert "scope normal de usuario sin privilegios" in prompt
-    assert "/usr/bin/docker ps, /usr/bin/docker ps -a" in prompt
+    assert "`sudo /usr/bin/docker ps`, `sudo /usr/bin/docker ps -a`" in prompt
+    assert "BLOCKED: patron destructivo detectado" in prompt
     assert "Nodo de pruebas" in prompt
     assert "Eres un arquitecto de infraestructura" in prompt
 

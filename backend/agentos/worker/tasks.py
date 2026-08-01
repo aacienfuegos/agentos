@@ -122,15 +122,20 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
                     f"-o UserKnownHostsFile={known_hosts_path} -o StrictHostKeyChecking=yes "
                     f"-p {target.ssh_port} {target.ssh_user}@{target.host}"
                 )
-                sudo_cmds = ", ".join(target.sudo_commands) if target.sudo_commands else "(ninguno configurado)"
+                sudo_cmds = ", ".join(f"`sudo {c}`" for c in target.sudo_commands) if target.sudo_commands else "(ninguno configurado)"
                 target_ctx = (
                     f"## InfraTarget: {target.name} (id: {target.id})\n"
                     f"Conéctate con: `{ssh_cmd} <comando>`\n"
                     f"Puedes ejecutar cualquier comando de solo lectura en tu scope normal "
                     f"de usuario sin privilegios (uptime, df -h, free -h, ip a, uname -a, "
-                    f"systemctl status, etc.). Para estos comandos concretos antepón `sudo` "
-                    f"(ya configurado sin contraseña en este host, nada más funciona con "
-                    f"sudo): {sudo_cmds}\n"
+                    f"systemctl status, etc.). Para privilegio adicional usa EXACTAMENTE, "
+                    f"carácter por carácter, uno de estos (sudo matchea el comando completo "
+                    f"literal — cualquier flag añadido o reordenado lo rechaza sin más): "
+                    f"{sudo_cmds}\n"
+                    f"El host audita y filtra una denylist best-effort — si un comando "
+                    f"devuelve `BLOCKED: patron destructivo detectado`, es un rechazo "
+                    f"deliberado del host: no reintentes ni busques una forma de rodearlo, "
+                    f"repórtalo tal cual en el informe.\n"
                     f"Notas: {target.notes or '(sin notas)'}\n"
                 )
                 agent.system_prompt = target_ctx + "\n---\n\n" + agent.system_prompt
