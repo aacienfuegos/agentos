@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InfraTopologyGraph } from "@/components/InfraTopologyGraph";
+import { InfraNetworkFirewallGraph } from "@/components/InfraNetworkFirewallGraph";
+import { trafficView, tailscaleView } from "@/lib/infraMapViews";
 
 const NODE_TYPE_LABEL: Record<string, string> = {
   host: "Host físico",
@@ -75,6 +77,8 @@ export default function InfraMapPage() {
   }
 
   const groups = groupByLocation(data?.nodes ?? []);
+  const traffic = trafficView(data?.nodes ?? [], data?.links ?? []);
+  const tailscale = tailscaleView(data?.nodes ?? [], data?.links ?? []);
 
   return (
     <div className="space-y-4">
@@ -111,13 +115,32 @@ export default function InfraMapPage() {
           Sin datos de infraestructura todavía. Pulsa &ldquo;Actualizar&rdquo; para extraerlos de la documentación.
         </div>
       ) : (
-        <Tabs defaultValue="topology">
+        <Tabs defaultValue="traffic">
           <TabsList variant="line">
-            <TabsTrigger value="topology">Topología</TabsTrigger>
+            <TabsTrigger value="traffic">Flujo de tráfico</TabsTrigger>
+            <TabsTrigger value="tailscale">Red privada</TabsTrigger>
+            <TabsTrigger value="firewall">Firewall entre redes</TabsTrigger>
+            <TabsTrigger value="topology">Todo</TabsTrigger>
             <TabsTrigger value="cards">Tarjetas</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="topology" className="mt-3">
+          <TabsContent value="traffic" className="mt-3 space-y-2">
+            <p className="text-xs text-zinc-500">Cómo llega una petición desde fuera hasta cada servicio: proxy inverso, forward-auth y reescrituras DNS.</p>
+            <InfraTopologyGraph nodes={traffic.nodes} networks={data?.networks ?? []} links={traffic.links} />
+          </TabsContent>
+
+          <TabsContent value="tailscale" className="mt-3 space-y-2">
+            <p className="text-xs text-zinc-500">Qué nodos se alcanzan entre sí vía Tailscale, sin depender de la red local — incluye el subnet router y el exit node.</p>
+            <InfraTopologyGraph nodes={tailscale.nodes} networks={data?.networks ?? []} links={tailscale.links} />
+          </TabsContent>
+
+          <TabsContent value="firewall" className="mt-3 space-y-2">
+            <p className="text-xs text-zinc-500">Excepciones de firewall documentadas entre redes (VLANs), no entre nodos individuales — no es la política general completa, solo lo capturado explícitamente.</p>
+            <InfraNetworkFirewallGraph nodes={data?.nodes ?? []} networks={data?.networks ?? []} links={data?.links ?? []} />
+          </TabsContent>
+
+          <TabsContent value="topology" className="mt-3 space-y-2">
+            <p className="text-xs text-zinc-500">Todas las relaciones a la vez — útil para explorar, pero mezcla tráfico, VPN, firewall y seguridad en un mismo grafo.</p>
             <InfraTopologyGraph nodes={data?.nodes ?? []} networks={data?.networks ?? []} links={data?.links ?? []} />
           </TabsContent>
 
