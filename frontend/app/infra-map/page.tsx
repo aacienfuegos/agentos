@@ -7,8 +7,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InfraTopologyGraph } from "@/components/InfraTopologyGraph";
-import { InfraNetworkFirewallGraph } from "@/components/InfraNetworkFirewallGraph";
-import { trafficView, tailscaleView } from "@/lib/infraMapViews";
+import { InfraZoneGraph } from "@/components/InfraZoneGraph";
+import {
+  trafficView,
+  tailscaleView,
+  networksAsZones,
+  hostZonesFrom,
+  groupNodesByZone,
+  aggregateFirewallByNetwork,
+} from "@/lib/infraMapViews";
 
 const NODE_TYPE_LABEL: Record<string, string> = {
   host: "Host físico",
@@ -80,6 +87,13 @@ export default function InfraMapPage() {
   const traffic = trafficView(data?.nodes ?? [], data?.links ?? []);
   const tailscale = tailscaleView(data?.nodes ?? [], data?.links ?? []);
 
+  const networkZones = networksAsZones(data?.networks ?? []);
+  const networkGrouping = groupNodesByZone(data?.nodes ?? [], networkZones, (n) => n.network_id);
+  const networkFirewallEdges = aggregateFirewallByNetwork(data?.nodes ?? [], data?.links ?? []);
+
+  const hostZones = hostZonesFrom(data?.nodes ?? []);
+  const hostGrouping = groupNodesByZone(data?.nodes ?? [], hostZones, (n) => n.parent_id);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -119,7 +133,8 @@ export default function InfraMapPage() {
           <TabsList variant="line">
             <TabsTrigger value="traffic">Flujo de tráfico</TabsTrigger>
             <TabsTrigger value="tailscale">Red privada</TabsTrigger>
-            <TabsTrigger value="firewall">Firewall entre redes</TabsTrigger>
+            <TabsTrigger value="networks">Redes</TabsTrigger>
+            <TabsTrigger value="virtualization">Virtualización</TabsTrigger>
             <TabsTrigger value="topology">Todo</TabsTrigger>
             <TabsTrigger value="cards">Tarjetas</TabsTrigger>
           </TabsList>
@@ -134,9 +149,27 @@ export default function InfraMapPage() {
             <InfraTopologyGraph nodes={tailscale.nodes} networks={data?.networks ?? []} links={tailscale.links} />
           </TabsContent>
 
-          <TabsContent value="firewall" className="mt-3 space-y-2">
-            <p className="text-xs text-zinc-500">Excepciones de firewall documentadas entre redes (VLANs), no entre nodos individuales — no es la política general completa, solo lo capturado explícitamente.</p>
-            <InfraNetworkFirewallGraph nodes={data?.nodes ?? []} networks={data?.networks ?? []} links={data?.links ?? []} />
+          <TabsContent value="networks" className="mt-3 space-y-2">
+            <p className="text-xs text-zinc-500">Qué nodos viven en cada red/VLAN, y qué excepciones de firewall existen entre ellas — no es la política general completa, solo lo capturado explícitamente.</p>
+            <InfraZoneGraph
+              zones={networkZones}
+              members={networkGrouping.members}
+              standalone={networkGrouping.standalone}
+              zoneIdByMemberId={networkGrouping.zoneIdByMemberId}
+              zoneEdges={networkFirewallEdges}
+              emptyMessage="Sin redes documentadas todavía."
+            />
+          </TabsContent>
+
+          <TabsContent value="virtualization" className="mt-3 space-y-2">
+            <p className="text-xs text-zinc-500">Qué máquinas virtuales y contenedores corren en cada host físico.</p>
+            <InfraZoneGraph
+              zones={hostZones}
+              members={hostGrouping.members}
+              standalone={hostGrouping.standalone}
+              zoneIdByMemberId={hostGrouping.zoneIdByMemberId}
+              emptyMessage="Sin jerarquía de host documentada todavía."
+            />
           </TabsContent>
 
           <TabsContent value="topology" className="mt-3 space-y-2">
