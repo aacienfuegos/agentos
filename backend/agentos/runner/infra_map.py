@@ -81,7 +81,7 @@ class _InfraMapAgentProxy:
     tools: list[str] = field(default_factory=lambda: ["Read", "Glob", "Grep", "Write"])
 
 
-def _build_system_prompt(docs_path: str) -> str:
+def _build_system_prompt(docs_path: str, extraction_path: str) -> str:
     schema = {
         "networks": [{"id": "local-id", "name": "str", "vlan_tag": "int|null", "subnet": "str", "gateway": "str", "location": "str"}],
         "nodes": [{"id": "local-id", "name": "str", "node_type": "host|vm|lxc|device", "location": "str", "parent_id": "local-id|null", "network_id": "local-id|null", "ip_local": "str", "ip_tailscale": "str", "role": "str", "status": "str", "source_files": ["ruta relativa al fichero origen"]}],
@@ -97,8 +97,9 @@ def _build_system_prompt(docs_path: str) -> str:
         "Los ids de este JSON son locales al documento (inventa slugs legibles, ej. "
         "'node-madrid-proxmox') — no son UUIDs reales, el sistema los resuelve después. "
         "Cuando termines, escribe ÚNICAMENTE el JSON final (sin explicación adicional) "
-        f"en el fichero `./{_EXTRACTION_FILENAME}` (ruta relativa a tu directorio de "
-        "trabajo actual, que sí es escribible) con exactamente este shape:\n\n"
+        f"con la herramienta Write en la ruta absoluta EXACTA `{extraction_path}` — "
+        "usa esa ruta absoluta literal, no una relativa ni ninguna otra ubicación "
+        "(ej. tu directorio home) — con exactamente este shape:\n\n"
         f"{json.dumps(schema, ensure_ascii=False, indent=2)}\n\n"
         "Si un documento no menciona algún campo, usa el valor por defecto (string vacío, "
         "null o lista vacía) — no inventes datos que no estén en la documentación."
@@ -126,7 +127,9 @@ class InfraMapRunner:
         extraction_path = work_dir / _EXTRACTION_FILENAME
         extraction_path.unlink(missing_ok=True)
 
-        agent = _InfraMapAgentProxy(system_prompt=_build_system_prompt(settings.infra_map_docs_path))
+        agent = _InfraMapAgentProxy(
+            system_prompt=_build_system_prompt(settings.infra_map_docs_path, str(extraction_path))
+        )
         runner = ClaudeCodeRunner(redis_url=self._redis_url)
         await runner.run(run, agent, cwd=str(work_dir))
 

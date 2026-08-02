@@ -16,6 +16,10 @@ from ..tools.notifications import send_notification
 
 _KNOWLEDGE_PREFIX = "knowledge:"
 _EXECUTE_AGENT_ID = "__execute__"
+# Leer y sintetizar ~20 ficheros markdown en un único JSON estructurado puede
+# tardar varios minutos de "pensamiento" del modelo sin tool_use visible
+# entre medias — 600s se quedó corto contra documentación real (ver #248).
+_INFRA_MAP_TIMEOUT_SECONDS = 1800
 
 
 @dataclass
@@ -251,7 +255,7 @@ async def _run_infra_map(run: Run) -> None:
     runner = InfraMapRunner()
     run_id = run.id
     try:
-        result = await asyncio.wait_for(runner.run(run), timeout=600)
+        result = await asyncio.wait_for(runner.run(run), timeout=_INFRA_MAP_TIMEOUT_SECONDS)
         with Session(engine, expire_on_commit=False) as session:
             db_run = session.get(Run, run_id)
             db_run.status = RunStatus.success
@@ -268,7 +272,7 @@ async def _run_infra_map(run: Run) -> None:
             priority="default",
         )
     except asyncio.TimeoutError:
-        _mark_failed(run_id, "Timeout after 600s")
+        _mark_failed(run_id, f"Timeout after {_INFRA_MAP_TIMEOUT_SECONDS}s")
     except Exception as e:
         _mark_failed(run_id, str(e))
         await send_notification(

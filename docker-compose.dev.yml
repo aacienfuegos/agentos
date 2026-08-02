@@ -21,6 +21,7 @@ services:
       - NTFY_URL=${NTFY_URL:-}
       - ENV=development
       - INFRA_AGENTS_ENABLED=${INFRA_AGENTS_ENABLED:-false}
+      - INFRA_MAP_DOCS_PATH=${INFRA_MAP_DOCS_PATH:-/data/homelab-docs}
     volumes:
       - ./backend/agentos:/app/agentos   # hot reload del código Python
       - ./backend/alembic:/app/alembic   # migraciones disponibles en dev

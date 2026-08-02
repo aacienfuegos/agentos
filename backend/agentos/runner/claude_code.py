@@ -80,6 +80,12 @@ class ClaudeCodeRunner:
             stderr=asyncio.subprocess.PIPE,
             env=env,
             cwd=cwd,
+            # Default StreamReader limit is 64KB per line — un solo evento
+            # stream-json (tool_result de un fichero grande, o el JSON final
+            # con mucho contenido) puede superarlo y asyncio.LimitOverrunError
+            # ("Separator is found, but chunk is longer than limit") tira
+            # todo el run. 10MB cubre cómodamente cualquier tool_result real.
+            limit=10 * 1024 * 1024,
         )
 
         output = ""
