@@ -56,6 +56,7 @@ services:
       - NTFY_URL=${NTFY_URL:-}
       - ENV=development
       - INFRA_AGENTS_ENABLED=${INFRA_AGENTS_ENABLED:-false}
+      - INFRA_MAP_DOCS_PATH=${INFRA_MAP_DOCS_PATH:-/data/homelab-docs}
     volumes:
       - ./backend/agentos:/app/agentos
       - ./backend/alembic:/app/alembic   # migraciones disponibles en dev (mismo motivo que backend)
@@ -64,6 +65,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${HOME}/.claude:/home/worker/.claude
       - ${HOME}/.claude.json:/home/worker/.claude.json
+      # Fuente de datos de infra-map (#248) — solo lectura, el worker nunca
+      # escribe aquí.
+      - ${HOME}/docu/homelab:/data/homelab-docs:ro
       # Knowledge agents con rutas externas: monta aquí los directorios del host.
       # Ejemplo: - ${HOME}/docu:/knowledge:rw
       # Luego pon knowledge_path=/knowledge/homelab en la config del agente.

@@ -53,11 +53,13 @@ import agentos.api.stats as _stats_module
 import agentos.agents.builtin as _builtin_module
 import agentos.worker.scheduler as _scheduler_module
 import agentos.api.execute as _execute_module
+import agentos.runner.infra_map as _infra_map_module
 
 _stats_module.engine = _ENGINE
 _builtin_module.engine = _ENGINE
 _scheduler_module.engine = _ENGINE
 _execute_module.engine = _ENGINE
+_infra_map_module.engine = _ENGINE
 
 
 def _test_get_session():

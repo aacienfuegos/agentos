@@ -67,6 +67,10 @@ services:
       # Knowledge agents con rutas externas: monta aquí los directorios del host.
       # Ejemplo: - ${HOME}/docu:/knowledge:rw
       # Luego pon knowledge_path=/knowledge/homelab en la config del agente.
+      # Infra map (#248) — monta aquí, siempre :ro, el directorio de
+      # documentación de infraestructura del host de producción.
+      # Ejemplo: - /ruta/en/el/host/docu/homelab:/data/homelab-docs:ro
+      # Luego define INFRA_MAP_DOCS_PATH=/data/homelab-docs en el .env de producción.
     depends_on:
       redis:
         condition: service_healthy
