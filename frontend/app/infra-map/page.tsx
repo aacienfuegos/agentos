@@ -5,6 +5,8 @@ import { api, InfraMap, InfraNode, InfraService } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { InfraTopologyGraph } from "@/components/InfraTopologyGraph";
 
 const NODE_TYPE_LABEL: Record<string, string> = {
   host: "Host físico",
@@ -104,69 +106,82 @@ export default function InfraMapPage() {
         </p>
       )}
 
-      {groups.size === 0 && (
+      {groups.size === 0 ? (
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-8 text-center text-sm text-zinc-500">
           Sin datos de infraestructura todavía. Pulsa &ldquo;Actualizar&rdquo; para extraerlos de la documentación.
         </div>
-      )}
+      ) : (
+        <Tabs defaultValue="topology">
+          <TabsList variant="line">
+            <TabsTrigger value="topology">Topología</TabsTrigger>
+            <TabsTrigger value="cards">Tarjetas</TabsTrigger>
+          </TabsList>
 
-      {[...groups.entries()].map(([location, nodes]) => (
-        <div key={location} className="space-y-2">
-          <h2 className="text-sm font-medium text-zinc-400">{location}</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {nodes.map((node) => (
-              <Card key={node.id} className="bg-zinc-900 border-zinc-800">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <CardTitle className="text-sm font-medium text-zinc-100">{node.name}</CardTitle>
-                    <Badge variant="outline" className="text-zinc-400 border-zinc-700 shrink-0">
-                      {NODE_TYPE_LABEL[node.node_type] ?? (node.node_type || "—")}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-2 text-xs text-zinc-500">
-                  {node.role && <p className="text-zinc-400">{node.role}</p>}
-                  {(node.ip_local || node.ip_tailscale) && (
-                    <p className="font-mono">
-                      {node.ip_local}
-                      {node.ip_tailscale && <span className="text-zinc-600"> · ts: {node.ip_tailscale}</span>}
-                    </p>
-                  )}
-                  {networkName(node.network_id) && (
-                    <Badge variant="secondary" className="bg-zinc-800 text-zinc-400">
-                      {networkName(node.network_id)}
-                    </Badge>
-                  )}
-                  {node.status && <p className="text-zinc-600">{node.status}</p>}
-                  {(servicesByNode.get(node.id) ?? []).length > 0 && (
-                    <div className="pt-2 border-t border-zinc-800 space-y-1">
-                      {servicesByNode.get(node.id)!.map((s) => (
-                        <div key={s.id} className="flex items-center justify-between">
-                          <span className="text-zinc-300">{s.name}</span>
-                          {s.domain && <span className="text-zinc-600 font-mono truncate ml-2">{s.domain}</span>}
+          <TabsContent value="topology" className="mt-3">
+            <InfraTopologyGraph nodes={data?.nodes ?? []} networks={data?.networks ?? []} links={data?.links ?? []} />
+          </TabsContent>
+
+          <TabsContent value="cards" className="mt-3 space-y-4">
+            {[...groups.entries()].map(([location, nodes]) => (
+              <div key={location} className="space-y-2">
+                <h2 className="text-sm font-medium text-zinc-400">{location}</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {nodes.map((node) => (
+                    <Card key={node.id} className="bg-zinc-900 border-zinc-800">
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <CardTitle className="text-sm font-medium text-zinc-100">{node.name}</CardTitle>
+                          <Badge variant="outline" className="text-zinc-400 border-zinc-700 shrink-0">
+                            {NODE_TYPE_LABEL[node.node_type] ?? (node.node_type || "—")}
+                          </Badge>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      {orphanServices.length > 0 && (
-        <div className="space-y-2">
-          <h2 className="text-sm font-medium text-zinc-400">Otros servicios</h2>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg divide-y divide-zinc-800">
-            {orphanServices.map((s) => (
-              <div key={s.id} className="px-4 py-2 flex items-center justify-between text-sm">
-                <span className="text-zinc-200">{s.name}</span>
-                <span className="text-zinc-600 text-xs">{s.category}</span>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-xs text-zinc-500">
+                        {node.role && <p className="text-zinc-400">{node.role}</p>}
+                        {(node.ip_local || node.ip_tailscale) && (
+                          <p className="font-mono">
+                            {node.ip_local}
+                            {node.ip_tailscale && <span className="text-zinc-600"> · ts: {node.ip_tailscale}</span>}
+                          </p>
+                        )}
+                        {networkName(node.network_id) && (
+                          <Badge variant="secondary" className="bg-zinc-800 text-zinc-400">
+                            {networkName(node.network_id)}
+                          </Badge>
+                        )}
+                        {node.status && <p className="text-zinc-600">{node.status}</p>}
+                        {(servicesByNode.get(node.id) ?? []).length > 0 && (
+                          <div className="pt-2 border-t border-zinc-800 space-y-1">
+                            {servicesByNode.get(node.id)!.map((s) => (
+                              <div key={s.id} className="flex items-center justify-between">
+                                <span className="text-zinc-300">{s.name}</span>
+                                {s.domain && <span className="text-zinc-600 font-mono truncate ml-2">{s.domain}</span>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
               </div>
             ))}
-          </div>
-        </div>
+
+            {orphanServices.length > 0 && (
+              <div className="space-y-2">
+                <h2 className="text-sm font-medium text-zinc-400">Otros servicios</h2>
+                <div className="bg-zinc-900 border border-zinc-800 rounded-lg divide-y divide-zinc-800">
+                  {orphanServices.map((s) => (
+                    <div key={s.id} className="px-4 py-2 flex items-center justify-between text-sm">
+                      <span className="text-zinc-200">{s.name}</span>
+                      <span className="text-zinc-600 text-xs">{s.category}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
       )}
     </div>
   );
