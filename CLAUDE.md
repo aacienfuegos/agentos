@@ -176,7 +176,9 @@ en `log_entries`. Tokens y coste se extraen del evento `result` final.
 
 ## Estado actual del desarrollo
 
-**Última sesión activa:** 2026-08-02 — hardening final de `infra-architect` (#219): fix de vulnerabilidad de auto-tampering de `authorized_keys` (root:root 711/644), PR `#245` (`feat/infra-agents-issue-219 → develop`) abierta y en verificación de CI.
+**Última sesión activa:** 2026-08-02 — hardening final de `infra-architect` (#219): fix de vulnerabilidad de auto-tampering de `authorized_keys` (root:root 711/644). PR `#245` mergeada a `develop`. De paso, PR `#246` corrigió una vulnerabilidad no relacionada (brace-expansion en el `npm` vendorizado de ambos Dockerfiles, ver gotcha) que rompía el deploy de staging. `develop` verde: tests, tipos, auditorías y Trivy pasando en ambas imágenes.
+
+> **Gotcha detectado (brace-expansion en npm vendorizado):** ambos `Dockerfile` instalan `npm@latest` globalmente (`npm install -g npm@latest`), y la propia CLI de npm trae vendorizado un `brace-expansion` que puede quedar en un rango vulnerable (CVE-2026-14257) sin que tenga nada que ver con las dependencias del proyecto — `npm audit`/overrides en `package.json` no lo tocan porque no es una dependencia de nuestro árbol, vive dentro de `usr/local/lib/node_modules/npm/node_modules/`. Como `deploy-staging.yml` solo corre en push a `develop` (no en cada PR) y `develop` llevaba 10 días sin push, el problema estuvo latente sin que ningún CI lo detectara hasta el primer push tras ese hueco. Fix: mismo patrón que el fix de `undici` ya existente en ambos Dockerfiles — instalar la versión parcheada aparte y copiarla sobre la vendorizada. Si Trivy vuelve a fallar por algo vendorizado en npm/node en el futuro, este es el sitio a mirar antes de tocar `frontend/package.json`.
 
 > **Gotcha detectado:** un PR con `Closes #N` solo auto-cierra el issue si se mergea en la *default branch* del repo (`main`). Como el flujo real es `feat → develop → main` en dos PRs separados, el cierre automático nunca se dispara al mergear a `develop`, y si la promoción `develop → main` se hace con un merge commit sin closing keyword, el issue se queda abierto aunque el código ya esté en producción. Revisar periódicamente con `git log main` vs `gh issue list --state open`.
 
@@ -188,7 +190,7 @@ en `log_entries`. Tokens y coste se extraen del evento `result` final.
 
 ### Batch pendiente de promoción `develop → main`
 
-`develop` tiene mergeado y sin promocionar a `main`: chat sobre runs (#209), agrupación de runs de knowledge chat (#210), orden de hijos por antigüedad (#211), separación `run_type`/`triggered_by` (#213), refactor KnowledgeBase/KnowledgeAgent (#221/#222). Existe PR abierta `#224` (`develop → main`) que promociona el refactor de KnowledgeBase; el resto del batch (#209–213) no tiene aún PR de promoción abierta.
+`develop` tiene mergeado y sin promocionar a `main`: chat sobre runs (#209), agrupación de runs de knowledge chat (#210), orden de hijos por antigüedad (#211), separación `run_type`/`triggered_by` (#213), refactor KnowledgeBase/KnowledgeAgent (#221/#222), agentes de infraestructura (#219, PRs #245/#246). Existe PR abierta `#224` (`develop → main`) que promociona el refactor de KnowledgeBase; el resto del batch (#209–213, #219) no tiene aún PR de promoción abierta.
 
 ### Issues ya implementados
 
