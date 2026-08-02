@@ -129,6 +129,57 @@ class InfraTarget(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class InfraNetwork(SQLModel, table=True):
+    __tablename__ = "infra_networks"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    name: str
+    vlan_tag: int | None = None
+    subnet: str = ""
+    gateway: str = ""
+    location: str = ""
+
+
+class InfraNode(SQLModel, table=True):
+    __tablename__ = "infra_nodes"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    name: str
+    node_type: str = ""  # "host" | "vm" | "lxc" | "device"
+    location: str = ""
+    parent_id: str | None = Field(default=None, foreign_key="infra_nodes.id")
+    network_id: str | None = Field(default=None, foreign_key="infra_networks.id")
+    ip_local: str = ""
+    ip_tailscale: str = ""
+    role: str = ""
+    status: str = ""
+    # Qué ficheros markdown de origen describen este nodo — para que el
+    # dashboard pueda enlazar "ver documentación" sin releer el árbol entero.
+    source_files: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+
+
+class InfraService(SQLModel, table=True):
+    __tablename__ = "infra_services"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    name: str
+    node_id: str | None = Field(default=None, foreign_key="infra_nodes.id")
+    category: str = ""
+    description: str = ""
+    domain: str = ""
+    source_files: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+
+
+class InfraLink(SQLModel, table=True):
+    __tablename__ = "infra_links"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    source_node_id: str = Field(foreign_key="infra_nodes.id")
+    target_node_id: str = Field(foreign_key="infra_nodes.id")
+    kind: str = ""  # "proxies_to" | "tailscale" | "firewall_allow" | "firewall_block" | ...
+    label: str = ""
+
+
 class LogEntry(SQLModel, table=True):
     __tablename__ = "log_entries"
 

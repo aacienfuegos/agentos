@@ -10,11 +10,16 @@ from ..config import settings
 from ..database import engine
 from ..models import Run, RunStatus, AgentDefinition, KnowledgeBase, InfraTarget
 from ..runner.claude_code import ClaudeCodeRunner
+from ..runner.infra_map import INFRA_MAP_AGENT_ID, InfraMapRunner
 from ..runner.knowledge import KnowledgeRunner
 from ..tools.notifications import send_notification
 
 _KNOWLEDGE_PREFIX = "knowledge:"
 _EXECUTE_AGENT_ID = "__execute__"
+# Leer y sintetizar ~20 ficheros markdown en un único JSON estructurado puede
+# tardar varios minutos de "pensamiento" del modelo sin tool_use visible
+# entre medias — 600s se quedó corto contra documentación real (ver #248).
+_INFRA_MAP_TIMEOUT_SECONDS = 1800
 
 
 @dataclass
@@ -48,6 +53,16 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
             session.expunge(run)
             timeout = params.get("timeout_seconds", 120)
             await _run_generic(run, agent, timeout)
+            return
+
+        # Route to InfraMapRunner for infra map extraction runs (#248)
+        if run.agent_id == INFRA_MAP_AGENT_ID:
+            run.status = RunStatus.running
+            run.started_at = datetime.utcnow()
+            session.add(run)
+            session.commit()
+            session.expunge(run)
+            await _run_infra_map(run)
             return
 
         # Route to KnowledgeRunner if agent_id starts with "knowledge:"
@@ -234,6 +249,37 @@ async def _run_knowledge(run: Run, kb: KnowledgeBase) -> None:
             priority="high",
         )
 
+
+
+async def _run_infra_map(run: Run) -> None:
+    runner = InfraMapRunner()
+    run_id = run.id
+    try:
+        result = await asyncio.wait_for(runner.run(run), timeout=_INFRA_MAP_TIMEOUT_SECONDS)
+        with Session(engine, expire_on_commit=False) as session:
+            db_run = session.get(Run, run_id)
+            db_run.status = RunStatus.success
+            db_run.output = (
+                f"{result.network_count} redes, {result.node_count} nodos, "
+                f"{result.service_count} servicios, {result.link_count} enlaces"
+            )
+            db_run.finished_at = datetime.utcnow()
+            session.add(db_run)
+            session.commit()
+        await send_notification(
+            title="✅ Mapa de infraestructura actualizado",
+            message=f"{result.node_count} nodos, {result.service_count} servicios",
+            priority="default",
+        )
+    except asyncio.TimeoutError:
+        _mark_failed(run_id, f"Timeout after {_INFRA_MAP_TIMEOUT_SECONDS}s")
+    except Exception as e:
+        _mark_failed(run_id, str(e))
+        await send_notification(
+            title="❌ Refresh del mapa de infraestructura falló",
+            message=str(e)[:200],
+            priority="high",
+        )
 
 
 async def _run_generic(run: Run, agent: _ExecuteAgentProxy, timeout: int) -> None:

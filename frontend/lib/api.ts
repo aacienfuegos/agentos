@@ -141,6 +141,55 @@ export interface InfraTarget {
   updated_at: string;
 }
 
+export interface InfraNetwork {
+  id: string;
+  name: string;
+  vlan_tag: number | null;
+  subnet: string;
+  gateway: string;
+  location: string;
+}
+
+export interface InfraNode {
+  id: string;
+  name: string;
+  node_type: string;
+  location: string;
+  parent_id: string | null;
+  network_id: string | null;
+  ip_local: string;
+  ip_tailscale: string;
+  role: string;
+  status: string;
+  source_files: string[];
+}
+
+export interface InfraService {
+  id: string;
+  name: string;
+  node_id: string | null;
+  category: string;
+  description: string;
+  domain: string;
+  source_files: string[];
+}
+
+export interface InfraLink {
+  id: string;
+  source_node_id: string;
+  target_node_id: string;
+  kind: string;
+  label: string;
+}
+
+export interface InfraMap {
+  networks: InfraNetwork[];
+  nodes: InfraNode[];
+  services: InfraService[];
+  links: InfraLink[];
+  last_refresh: { run_id: string; status: string; finished_at: string | null } | null;
+}
+
 export interface KnowledgeBase {
   id: string;
   name: string;
@@ -306,6 +355,11 @@ export const api = {
       apiFetch<InfraTarget>(`/api/infra-targets/${id}/regenerate-key`, { method: "POST" }),
     setupCommands: (id: string) =>
       apiFetch<{ commands: string }>(`/api/infra-targets/${id}/setup-commands`),
+  },
+  infraMap: {
+    get: () => apiFetch<InfraMap>("/api/infra-map"),
+    refresh: () =>
+      apiFetch<{ run_id: string; status: string }>("/api/infra-map/refresh", { method: "POST" }),
   },
   stats: () => apiFetch<Stats>("/api/stats"),
   health: () => apiFetch<HealthStatus>("/api/health"),

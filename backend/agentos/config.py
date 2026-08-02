@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     # (IP fija, Tailscale) antes de desplegar claves en más de un host.
     agentos_source_ip: str = ""
 
+    # Infra map (phase:infra-map, #248) — dashboard/topología derivados de un
+    # directorio de documentación de infraestructura, montado read-only.
+    # Vacío = feature inactiva (POST /api/infra-map/refresh devuelve 400 en
+    # vez de fallar en silencio o mostrar datos vacíos como si fuera un
+    # estado válido).
+    infra_map_docs_path: str = ""
+    infra_map_work_path: str = "/data/infra_map/work"
+
     @property
     def is_dev(self) -> bool:
         return self.env == "development"
