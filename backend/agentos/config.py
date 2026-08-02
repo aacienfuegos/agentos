@@ -31,6 +31,17 @@ class Settings(BaseSettings):
     # Harness
     harness_path: str = "~/.claude"
 
+    # Infra agents (phase:infra-agents-1) — disabled by default, single-tenant only
+    infra_agents_enabled: bool = False
+    infra_keys_path: str = "/data/infra_keys"
+    # IP/CIDR estable desde la que AgentOS se conecta a los InfraTarget — si
+    # se configura, setup-commands la incluye como from="..." en
+    # authorized_keys (restringe desde dónde puede usarse la clave, no solo
+    # qué puede ejecutar). Vacío por defecto: sin esta restricción, porque
+    # exige que el propietario tenga ya una identidad de red estable
+    # (IP fija, Tailscale) antes de desplegar claves en más de un host.
+    agentos_source_ip: str = ""
+
     @property
     def is_dev(self) -> bool:
         return self.env == "development"

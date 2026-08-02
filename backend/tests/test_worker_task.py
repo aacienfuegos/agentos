@@ -27,7 +27,7 @@ import agentos.runner.claude_code as _runner_module
 _tasks_module.engine = _ENGINE
 _runner_module.engine = _ENGINE
 
-from agentos.models import AgentDefinition, KnowledgeBase, Run, RunStatus
+from agentos.models import AgentDefinition, InfraTarget, KnowledgeBase, Run, RunStatus
 from agentos.runner.claude_code import RunResult
 from agentos.worker.tasks import run_agent_task
 
@@ -160,6 +160,177 @@ async def test_run_agent_task_kb_context_injected(db_session, tmp_path):
     assert "asistente especializado" not in prompt
     assert "---" in prompt
     assert captured["cwd"] == str(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_run_agent_task_infra_target_context_injected(db_session):
+    """infra-architect run with target_id gets concrete SSH details prepended."""
+    target = InfraTarget(
+        id="homelab-dev",
+        name="Homelab Dev",
+        host="homelab-dev.internal",
+        ssh_user="agentos",
+        ssh_port=2222,
+        notes="Nodo de pruebas",
+        known_hosts_entry="homelab-dev.internal ssh-ed25519 AAAAtest",
+        host_key_fingerprint="256 SHA256:test test.internal (ED25519)",
+        sudo_commands=["/usr/bin/docker ps", "/usr/bin/docker ps -a"],
+    )
+    db_session.add(target)
+
+    agent = AgentDefinition(
+        id="infra-architect",
+        name="Infra Architect",
+        description="desc",
+        system_prompt="Eres un arquitecto de infraestructura en modo solo lectura.",
+        tools=["Bash", "Read"],
+        model="claude-sonnet-4-6",
+        timeout_seconds=30,
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    run = Run(agent_id="infra-architect", input_params={"target_id": "homelab-dev"})
+    db_session.add(run)
+    db_session.commit()
+    run_id = run.id
+
+    captured: dict = {}
+
+    async def _fake_run(self, run, agent_def, **kwargs):
+        captured["system_prompt"] = agent_def.system_prompt
+        return RunResult(output="ok", tokens_input=1, tokens_output=1)
+
+    with (
+        patch.object(_tasks_module.settings, "infra_agents_enabled", True),
+        patch.object(_tasks_module.ClaudeCodeRunner, "run", new=_fake_run),
+        patch("agentos.worker.tasks.send_notification", new=AsyncMock()),
+    ):
+        await run_agent_task({}, run_id)
+
+    prompt = captured["system_prompt"]
+    assert "## InfraTarget: Homelab Dev" in prompt
+    assert f"-i {_tasks_module.settings.infra_keys_path}/homelab-dev/id_ed25519" in prompt
+    assert "-o StrictHostKeyChecking=yes" in prompt
+    assert "-p 2222 agentos@homelab-dev.internal" in prompt
+    assert "scope normal de usuario sin privilegios" in prompt
+    assert "`sudo /usr/bin/docker ps`, `sudo /usr/bin/docker ps -a`" in prompt
+    assert "BLOCKED: patron destructivo detectado" in prompt
+    assert "Nodo de pruebas" in prompt
+    assert "Eres un arquitecto de infraestructura" in prompt
+
+
+@pytest.mark.asyncio
+async def test_run_agent_task_infra_target_missing_is_ignored(db_session):
+    """Unknown target_id falls back silently to the agent's own system prompt."""
+    agent = AgentDefinition(
+        id="infra-architect",
+        name="Infra Architect",
+        description="desc",
+        system_prompt="Eres un arquitecto de infraestructura en modo solo lectura.",
+        tools=["Bash", "Read"],
+        model="claude-sonnet-4-6",
+        timeout_seconds=30,
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    run = Run(agent_id="infra-architect", input_params={"target_id": "ghost-target"})
+    db_session.add(run)
+    db_session.commit()
+    run_id = run.id
+
+    mock_result = RunResult(output="ok", tokens_input=1, tokens_output=1)
+    with (
+        patch.object(_tasks_module.settings, "infra_agents_enabled", True),
+        patch.object(_tasks_module.ClaudeCodeRunner, "run", new=AsyncMock(return_value=mock_result)),
+        patch("agentos.worker.tasks.send_notification", new=AsyncMock()),
+    ):
+        await run_agent_task({}, run_id)
+
+    with Session(_ENGINE) as s:
+        finished = s.get(Run, run_id)
+        assert finished.status == RunStatus.success
+
+
+@pytest.mark.asyncio
+async def test_run_agent_task_infra_target_unverified_is_ignored(db_session):
+    """A target without a fixed host key (TOFU not yet run) gets no SSH context
+    injected — /api/runs already blocks this at creation time, this is just
+    defense in depth so the agent never gets an ssh command it can't trust."""
+    target = InfraTarget(
+        id="homelab-dev",
+        name="Homelab Dev",
+        host="homelab-dev.internal",
+        ssh_user="agentos",
+        ssh_port=2222,
+        notes="Nodo de pruebas",
+    )
+    db_session.add(target)
+
+    agent = AgentDefinition(
+        id="infra-architect",
+        name="Infra Architect",
+        description="desc",
+        system_prompt="Eres un arquitecto de infraestructura en modo solo lectura.",
+        tools=["Bash", "Read"],
+        model="claude-sonnet-4-6",
+        timeout_seconds=30,
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    run = Run(agent_id="infra-architect", input_params={"target_id": "homelab-dev"})
+    db_session.add(run)
+    db_session.commit()
+    run_id = run.id
+
+    captured: dict = {}
+
+    async def _fake_run(self, run, agent_def, **kwargs):
+        captured["system_prompt"] = agent_def.system_prompt
+        return RunResult(output="ok", tokens_input=1, tokens_output=1)
+
+    with (
+        patch.object(_tasks_module.settings, "infra_agents_enabled", True),
+        patch.object(_tasks_module.ClaudeCodeRunner, "run", new=_fake_run),
+        patch("agentos.worker.tasks.send_notification", new=AsyncMock()),
+    ):
+        await run_agent_task({}, run_id)
+
+    assert "## InfraTarget" not in captured["system_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_run_agent_task_infra_disabled_fails_fast(db_session):
+    """Kill-switch: infra-architect must not execute when INFRA_AGENTS_ENABLED=false,
+    even if the agent row was seeded earlier while the flag was true."""
+    agent = AgentDefinition(
+        id="infra-architect",
+        name="Infra Architect",
+        description="desc",
+        system_prompt="Eres un arquitecto de infraestructura en modo solo lectura.",
+        tools=["Bash", "Read"],
+        model="claude-sonnet-4-6",
+        timeout_seconds=30,
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    run = Run(agent_id="infra-architect", input_params={"target_id": "homelab-dev"})
+    db_session.add(run)
+    db_session.commit()
+    run_id = run.id
+
+    assert _tasks_module.settings.infra_agents_enabled is False
+    with patch.object(_tasks_module.ClaudeCodeRunner, "run", new=AsyncMock()) as mock_run:
+        await run_agent_task({}, run_id)
+        mock_run.assert_not_called()
+
+    with Session(_ENGINE) as session:
+        finished = session.get(Run, run_id)
+        assert finished.status == RunStatus.failed
+        assert "INFRA_AGENTS_ENABLED" in finished.error
 
 
 @pytest.mark.asyncio

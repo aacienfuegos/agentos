@@ -20,6 +20,7 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
       - NTFY_URL=${NTFY_URL:-}
       - ENV=development
+      - INFRA_AGENTS_ENABLED=${INFRA_AGENTS_ENABLED:-false}
     volumes:
       - ./backend/agentos:/app/agentos   # hot reload del código Python
       - ./backend/alembic:/app/alembic   # migraciones disponibles en dev
@@ -54,8 +55,10 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
       - NTFY_URL=${NTFY_URL:-}
       - ENV=development
+      - INFRA_AGENTS_ENABLED=${INFRA_AGENTS_ENABLED:-false}
     volumes:
       - ./backend/agentos:/app/agentos
+      - ./backend/alembic:/app/alembic   # migraciones disponibles en dev (mismo motivo que backend)
       - backend_data:/data
       - ./agents_config:/app/agents_config
       - /var/run/docker.sock:/var/run/docker.sock
@@ -70,6 +73,23 @@ services:
       backend:
         condition: service_healthy
     command: uv run watchfiles "python -m arq agentos.worker.tasks.WorkerSettings" agentos
+
+  # Objetivo SSH de solo lectura para probar infra-architect en local, sin tocar
+  # infraestructura real. authorized_keys fuerza `sudo -n -- $SSH_ORIGINAL_COMMAND`;
+  # sudoers (instalado por scripts/infra-dev/sync-dev-target-key.sh) es quien
+  # decide qué comandos puede ejecutar el agente — ver docs/infra-agents-design.md.
+  infra-dev-target:
+    image: linuxserver/openssh-server:latest
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - USER_NAME=agentos
+      - PASSWORD_ACCESS=false
+    volumes:
+      - ./scripts/infra-dev/authorized_keys:/config/.ssh/authorized_keys:ro
+    ports:
+      - "2222:2222"
 
   redis:
     image: redis:7-alpine

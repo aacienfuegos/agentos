@@ -4,7 +4,7 @@ from typing import Any
 import uuid
 
 from sqlmodel import SQLModel, Field, Column
-from sqlalchemy import JSON
+from sqlalchemy import JSON, Text
 
 
 class RunStatus(str, Enum):
@@ -90,6 +90,43 @@ class ApiKey(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_used_at: datetime | None = None
     enabled: bool = True
+
+
+class InfraTarget(SQLModel, table=True):
+    __tablename__ = "infra_targets"
+
+    id: str = Field(primary_key=True)  # slug, e.g. "homelab-dev"
+    name: str
+    host: str
+    ssh_user: str
+    ssh_port: int = 22
+    notes: str = ""
+    # TOFU: rellenos por POST /api/infra-targets/{id}/verify-host (ssh-keyscan),
+    # nunca por el CRUD directo. known_hosts_entry es la línea literal que se
+    # materializa como UserKnownHostsFile en tiempo de ejecución del run.
+    known_hosts_entry: str | None = Field(default=None, sa_column=Column(Text))
+    host_key_fingerprint: str | None = None
+    # Keypair ed25519 dedicado por target, generado automáticamente en
+    # POST /api/infra-targets (ver api/infra_targets.py::_generate_keypair).
+    # La privada nunca toca la DB ni el repo — vive en
+    # settings.infra_keys_path/{id}/id_ed25519, en el volumen /data que ya
+    # comparten backend y worker. Una clave por host (no una compartida)
+    # acota el blast radius: comprometer un host no compromete el resto de
+    # la flota, y se puede revocar uno solo sin rotar en los demás.
+    ssh_public_key: str | None = Field(default=None, sa_column=Column(Text))
+    # NO es un allowlist de "lo único que el agente puede ejecutar" — el
+    # usuario SSH dedicado corre en su scope normal sin privilegios y puede
+    # ejecutar cualquier comando de solo lectura de ese scope (uptime, df -h,
+    # ip a...) sin restricción a nivel de SSH. Esta lista es solo el
+    # subconjunto que de verdad necesita privilegio (ej. "/usr/bin/docker ps",
+    # que si no requeriría meter al usuario en el grupo docker — equivalente
+    # a root) y que por tanto se autoriza vía sudoers con NOPASSWD acotado a
+    # exactamente estos comandos+argumentos. Editable por target: cada host
+    # puede necesitar un subconjunto distinto. Se inyecta también en el
+    # contexto del agente para que sepa qué necesita anteponer con `sudo`.
+    sudo_commands: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class LogEntry(SQLModel, table=True):

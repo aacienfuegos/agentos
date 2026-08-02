@@ -126,6 +126,21 @@ export interface ExecuteAsyncResponse {
   status: string;
 }
 
+export interface InfraTarget {
+  id: string;
+  name: string;
+  host: string;
+  ssh_user: string;
+  ssh_port: number;
+  notes: string;
+  known_hosts_entry: string | null;
+  host_key_fingerprint: string | null;
+  ssh_public_key: string | null;
+  sudo_commands: string[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface KnowledgeBase {
   id: string;
   name: string;
@@ -275,6 +290,22 @@ export const api = {
       apiFetch<Run>(`/api/schedules/${id}/run-now`, { method: "POST" }),
     delete: (id: string) =>
       apiFetch<void>(`/api/schedules/${id}`, { method: "DELETE" }),
+  },
+  infraTargets: {
+    list: () => apiFetch<InfraTarget[]>("/api/infra-targets"),
+    get: (id: string) => apiFetch<InfraTarget>(`/api/infra-targets/${id}`),
+    create: (data: Partial<InfraTarget>) =>
+      apiFetch<InfraTarget>("/api/infra-targets", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<InfraTarget>) =>
+      apiFetch<InfraTarget>(`/api/infra-targets/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id: string) =>
+      apiFetch<void>(`/api/infra-targets/${id}`, { method: "DELETE" }),
+    verifyHost: (id: string) =>
+      apiFetch<InfraTarget>(`/api/infra-targets/${id}/verify-host`, { method: "POST" }),
+    regenerateKey: (id: string) =>
+      apiFetch<InfraTarget>(`/api/infra-targets/${id}/regenerate-key`, { method: "POST" }),
+    setupCommands: (id: string) =>
+      apiFetch<{ commands: string }>(`/api/infra-targets/${id}/setup-commands`),
   },
   stats: () => apiFetch<Stats>("/api/stats"),
   health: () => apiFetch<HealthStatus>("/api/health"),

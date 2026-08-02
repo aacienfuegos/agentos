@@ -1,13 +1,14 @@
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 
 from arq.connections import RedisSettings
 from sqlmodel import Session
 
 from ..config import settings
 from ..database import engine
-from ..models import Run, RunStatus, AgentDefinition, KnowledgeBase
+from ..models import Run, RunStatus, AgentDefinition, KnowledgeBase, InfraTarget
 from ..runner.claude_code import ClaudeCodeRunner
 from ..runner.knowledge import KnowledgeRunner
 from ..tools.notifications import send_notification
@@ -76,6 +77,13 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
             session.commit()
             return
 
+        if agent.id == "infra-architect" and not settings.infra_agents_enabled:
+            run.status = RunStatus.failed
+            run.error = "Infra agents are disabled (INFRA_AGENTS_ENABLED=false)"
+            session.add(run)
+            session.commit()
+            return
+
         run.status = RunStatus.running
         run.started_at = datetime.utcnow()
         session.add(run)
@@ -95,6 +103,42 @@ async def run_agent_task(ctx: dict, run_id: str) -> None:
                 agent.system_prompt = knowledge_ctx + "\n\n---\n\n" + agent.system_prompt
                 ka_cwd = kb.knowledge_path
                 session.expunge(kb)
+
+        # Inject the concrete InfraTarget connection details for infra-architect
+        # runs, so it diagnoses the target the caller picked instead of the
+        # fixed example alias hardcoded in its own system prompt. La host key
+        # queda fijada (TOFU) en verify-host; aquí se materializa como fichero
+        # known_hosts propio del run para no depender de un ~/.ssh/config
+        # estático por host (eso obligaba a editar config + reiniciar
+        # contenedores por cada target nuevo).
+        target_id: str | None = run.input_params.get("target_id")
+        if not resume_session_id and target_id and agent.id == "infra-architect":
+            target = session.get(InfraTarget, target_id)
+            if target and target.known_hosts_entry:
+                known_hosts_path = Path(f"/tmp/agentos-known-hosts-{target.id}")
+                known_hosts_path.write_text(target.known_hosts_entry + "\n")
+                ssh_cmd = (
+                    f"ssh -i {settings.infra_keys_path}/{target.id}/id_ed25519 "
+                    f"-o UserKnownHostsFile={known_hosts_path} -o StrictHostKeyChecking=yes "
+                    f"-p {target.ssh_port} {target.ssh_user}@{target.host}"
+                )
+                sudo_cmds = ", ".join(f"`sudo {c}`" for c in target.sudo_commands) if target.sudo_commands else "(ninguno configurado)"
+                target_ctx = (
+                    f"## InfraTarget: {target.name} (id: {target.id})\n"
+                    f"Conéctate con: `{ssh_cmd} <comando>`\n"
+                    f"Puedes ejecutar cualquier comando de solo lectura en tu scope normal "
+                    f"de usuario sin privilegios (uptime, df -h, free -h, ip a, uname -a, "
+                    f"systemctl status, etc.). Para privilegio adicional usa EXACTAMENTE, "
+                    f"carácter por carácter, uno de estos (sudo matchea el comando completo "
+                    f"literal — cualquier flag añadido o reordenado lo rechaza sin más): "
+                    f"{sudo_cmds}\n"
+                    f"El host audita y filtra una denylist best-effort — si un comando "
+                    f"devuelve `BLOCKED: patron destructivo detectado`, es un rechazo "
+                    f"deliberado del host: no reintentes ni busques una forma de rodearlo, "
+                    f"repórtalo tal cual en el informe.\n"
+                    f"Notas: {target.notes or '(sin notas)'}\n"
+                )
+                agent.system_prompt = target_ctx + "\n---\n\n" + agent.system_prompt
 
         # Detach before session closes so attributes remain accessible after expiry
         session.expunge(run)

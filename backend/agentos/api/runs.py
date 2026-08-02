@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 
 from ..config import settings
 from ..database import get_session
-from ..models import Run, RunStatus, AgentDefinition, LogEntry
+from ..models import Run, RunStatus, AgentDefinition, LogEntry, InfraTarget
 
 router = APIRouter()
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -101,6 +101,19 @@ async def create_run(run: RunCreate, session: SessionDep) -> Run:
     agent = session.get(AgentDefinition, run.agent_id)
     if not agent:
         raise HTTPException(404, "Agent not found")
+    if agent.id == "infra-architect" and not settings.infra_agents_enabled:
+        raise HTTPException(403, "Infra agents are disabled (INFRA_AGENTS_ENABLED=false)")
+
+    target_id = run.input_params.get("target_id")
+    if agent.id == "infra-architect" and target_id:
+        target = session.get(InfraTarget, target_id)
+        if not target:
+            raise HTTPException(404, f"Infra target '{target_id}' not found")
+        if not target.known_hosts_entry:
+            raise HTTPException(
+                400,
+                "La host key de este target no está verificada — usa 'Verificar host' antes de lanzar el diagnóstico",
+            )
 
     has_conversation = "conversation_id" in run.input_params
     run_type = "chat" if has_conversation else "agent"
