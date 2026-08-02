@@ -15,7 +15,11 @@ RUN apk upgrade --no-cache \
     && mkdir /tmp/undici-fix && cd /tmp/undici-fix \
     && npm install undici@6.27.0 \
     && cp -rf node_modules/undici "$(npm root -g)/npm/node_modules/" \
-    && cd / && rm -rf /tmp/undici-fix
+    && cd / && rm -rf /tmp/undici-fix \
+    && mkdir /tmp/brace-expansion-fix && cd /tmp/brace-expansion-fix \
+    && npm install brace-expansion@5.0.9 \
+    && cp -rf node_modules/brace-expansion "$(npm root -g)/npm/node_modules/" \
+    && cd / && rm -rf /tmp/brace-expansion-fix
 
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static

@@ -20,6 +20,10 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
        && npm install undici@6.27.0 \
        && cp -rf node_modules/undici "$(npm root -g)/npm/node_modules/" \
        && cd / && rm -rf /tmp/undici-fix \
+    && mkdir /tmp/brace-expansion-fix && cd /tmp/brace-expansion-fix \
+       && npm install brace-expansion@5.0.9 \
+       && cp -rf node_modules/brace-expansion "$(npm root -g)/npm/node_modules/" \
+       && cd / && rm -rf /tmp/brace-expansion-fix \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files first for layer caching
