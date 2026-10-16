@@ -51,7 +51,7 @@ jobs:
         working-directory: frontend
 
       - name: Auditoría de seguridad npm
-        run: npm audit --audit-level=moderate
+        run: npm run audit:ci
         working-directory: frontend
 
       - name: Build frontend
