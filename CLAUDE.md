@@ -109,7 +109,7 @@ npx tsc --noEmit
 
 # Auditoría de seguridad npm (igual que CI — ejecutar antes de pushear)
 cd frontend
-npm audit --audit-level=moderate
+npm run audit:ci   # npm audit --audit-level=moderate con las excepciones de scripts/npm-audit.mjs
 ```
 
 ## Variables de entorno requeridas
@@ -144,7 +144,7 @@ feat/nombre-N  ──PR──►  develop  ──PR──►  main
 4. `cd backend && uv run pytest` — pasar todos los tests sin excepción
 5. `cd backend && uv run pip-audit` — sin vulnerabilidades Python
 6. `cd frontend && npx tsc --noEmit` — verificar tipos sin excepción
-7. `cd frontend && npm audit --audit-level=moderate` — sin vulnerabilidades npm
+7. `cd frontend && npm run audit:ci` — sin vulnerabilidades npm fuera de las excepciones con fecha de `frontend/scripts/npm-audit.mjs`
 8. Probar visualmente en `http://localhost:3000`
 9. Commit con prefijo convencional: `feat(scope): descripción (#número)`
 10. PR hacia `develop` con `Closes #N` en el body
