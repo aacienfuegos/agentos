@@ -7,6 +7,12 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 10
+    # Una versión publicada hace menos de 7 días no entra: da margen a que se
+    # retire un paquete comprometido. No afecta a las actualizaciones de seguridad.
+    cooldown:
+      default-days: 7
+    # Un PR por grupo. Cada dependencia va al primer grupo que la incluye: react va
+    # junto en cualquier subida y los majors del resto siguen yendo en PR sueltos.
     groups:
       react:
         patterns:
@@ -14,20 +20,42 @@ updates:
           - "react-dom"
           - "@types/react"
           - "@types/react-dom"
+      menores-y-parches:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
-  - package-ecosystem: "docker"
+  # Sustituye al workflow uv-lock-upgrade.yml: cubre también las dependencias
+  # transitivas (anyio, urllib3...), como hacía uv lock --upgrade.
+  - package-ecosystem: "uv"
     directory: "/backend"
     target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
+    open-pull-requests-limit: 10
+    allow:
+      - dependency-type: "all"
+    cooldown:
+      default-days: 7
+    groups:
+      menores-y-parches:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "docker"
-    directory: "/frontend"
+    directories:
+      - "/backend"
+      - "/frontend"
     target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 7
+    groups:
+      imagenes:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -35,3 +63,9 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 7
+    groups:
+      acciones:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
