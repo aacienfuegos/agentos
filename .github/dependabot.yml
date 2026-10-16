@@ -24,6 +24,24 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
+  # Sustituye al workflow uv-lock-upgrade.yml: cubre también las dependencias
+  # transitivas (anyio, urllib3...), como hacía uv lock --upgrade.
+  - package-ecosystem: "uv"
+    directory: "/backend"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    allow:
+      - dependency-type: "all"
+    cooldown:
+      default-days: 7
+    groups:
+      menores-y-parches:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
   - package-ecosystem: "docker"
     directories:
       - "/backend"
