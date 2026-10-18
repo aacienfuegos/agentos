@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Eye, Info } from "lucide-react";
 
 const AGENT_PARAMS: Record<string, Array<{ key: string; label: string; placeholder: string; required?: boolean }>> = {
   "code-review": [
@@ -66,6 +67,13 @@ export default function AgentsPage() {
   const [editForm, setEditForm] = useState<AgentForm>(DEFAULT_FORM);
   const [editSaving, setEditSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const [showPromptPreview, setShowPromptPreview] = useState(false);
+  const [promptPreviewSystem, setPromptPreviewSystem] = useState("");
+  const [promptPreviewMessage, setPromptPreviewMessage] = useState<string | null>(null);
+  const [loadingPromptPreview, setLoadingPromptPreview] = useState(false);
+  const [promptPreviewError, setPromptPreviewError] = useState("");
+  const [showPromptInfo, setShowPromptInfo] = useState(false);
 
   const load = () =>
     Promise.all([api.agents.list().then(setAgents), api.knowledgeBases.list().then(setKnowledgeBases)]);
@@ -201,6 +209,43 @@ export default function AgentsPage() {
     }
   };
 
+  const openPromptPreview = async (agentId: string) => {
+    setShowPromptPreview(true);
+    setPromptPreviewMessage(null);
+    setLoadingPromptPreview(true);
+    setPromptPreviewError("");
+    try {
+      const { system_prompt } = await api.agents.previewPrompt(agentId);
+      setPromptPreviewSystem(system_prompt);
+    } catch {
+      setPromptPreviewError("No se pudo cargar el preview del system prompt.");
+    } finally {
+      setLoadingPromptPreview(false);
+    }
+  };
+
+  const openFullPromptPreview = async () => {
+    if (!selected) return;
+    setShowPromptPreview(true);
+    setLoadingPromptPreview(true);
+    setPromptPreviewError("");
+    try {
+      const input: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(params)) {
+        if (v.trim()) {
+          input[k] = k === "pr_number" ? parseInt(v) || v : v;
+        }
+      }
+      const { system_prompt, user_message } = await api.agents.previewFullPrompt(selected.id, input);
+      setPromptPreviewSystem(system_prompt);
+      setPromptPreviewMessage(user_message);
+    } catch {
+      setPromptPreviewError("No se pudo cargar el preview del prompt completo.");
+    } finally {
+      setLoadingPromptPreview(false);
+    }
+  };
+
   const kaName = (id: string | null) => knowledgeBases.find((k) => k.id === id)?.name ?? id;
 
   return (
@@ -259,6 +304,15 @@ export default function AgentsPage() {
                     Editar
                   </Button>
                 )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-zinc-700 text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 px-2"
+                  onClick={() => openPromptPreview(agent.id)}
+                  title="Preview del system prompt"
+                >
+                  <Eye size={14} />
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -284,6 +338,13 @@ export default function AgentsPage() {
                 />
               </div>
             ))}
+            <button
+              type="button"
+              onClick={openFullPromptPreview}
+              className="flex items-center gap-1.5 text-xs font-mono text-zinc-500 hover:text-amber-400 transition-colors"
+            >
+              <Eye size={13} /> preview prompt completo
+            </button>
             <Button className="w-full bg-violet-600 hover:bg-violet-700" onClick={launch} disabled={launching}>
               {launching ? "Lanzando…" : "Ejecutar agente"}
             </Button>
@@ -363,14 +424,25 @@ export default function AgentsPage() {
           <form onSubmit={saveEdit} className="space-y-4 pt-2">
             <AgentFormFields form={editForm} setForm={setEditForm} knowledgeBases={knowledgeBases} showId={false} />
             <div className="flex items-center justify-between pt-1">
-              <button
-                type="button"
-                onClick={deleteAgent}
-                disabled={deleting}
-                className="text-xs text-red-500/60 hover:text-red-400 transition-colors disabled:opacity-30"
-              >
-                {deleting ? "eliminando…" : "eliminar agente"}
-              </button>
+              <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={deleteAgent}
+                  disabled={deleting}
+                  className="text-xs text-red-500/60 hover:text-red-400 transition-colors disabled:opacity-30"
+                >
+                  {deleting ? "eliminando…" : "eliminar agente"}
+                </button>
+                {editing && (
+                  <button
+                    type="button"
+                    onClick={() => openPromptPreview(editing.id)}
+                    className="flex items-center gap-1.5 text-xs font-mono text-zinc-500 hover:text-amber-400 transition-colors"
+                  >
+                    <Eye size={13} /> preview prompt
+                  </button>
+                )}
+              </div>
               <Button type="submit" disabled={editSaving} className="bg-violet-600 hover:bg-violet-700">
                 {editSaving ? "Guardando…" : "Guardar cambios"}
               </Button>
@@ -378,6 +450,67 @@ export default function AgentsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Prompt preview modal */}
+      {showPromptPreview && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70"
+          onClick={() => setShowPromptPreview(false)}
+        >
+          <div
+            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-zinc-950 border border-zinc-800 rounded-xl p-6 shadow-xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-1.5">
+                <h2 className="text-sm font-mono font-semibold text-zinc-200">
+                  {promptPreviewMessage !== null ? "Preview del prompt completo" : "Preview del system prompt"}
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setShowPromptInfo((v) => !v)}
+                  className="text-zinc-600 hover:text-zinc-300 transition-colors"
+                  aria-label="Qué es esto"
+                >
+                  <Info size={13} />
+                </button>
+              </div>
+              <button
+                onClick={() => setShowPromptPreview(false)}
+                className="text-zinc-600 hover:text-zinc-300 text-lg leading-none shrink-0"
+              >
+                ×
+              </button>
+            </div>
+            {showPromptInfo && (
+              <p className="text-xs font-mono text-zinc-500 leading-relaxed -mt-2">
+                {promptPreviewMessage !== null
+                  ? "Esto es exactamente lo que recibirá el agente en este run: el system prompt (incluyendo el contexto de la base de conocimiento enlazada, si tiene) más el mensaje de usuario construido a partir de los valores que has rellenado arriba."
+                  : "Este es el system prompt del agente, incluyendo el contexto de la base de conocimiento enlazada (si tiene) que se le antepone en cada ejecución."}
+              </p>
+            )}
+            {loadingPromptPreview ? (
+              <p className="text-xs font-mono text-zinc-600">cargando···</p>
+            ) : promptPreviewError ? (
+              <p className="text-xs font-mono text-red-400">{promptPreviewError}</p>
+            ) : (
+              <div className="space-y-4">
+                <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap leading-relaxed bg-zinc-900 border border-white/[0.06] rounded-lg p-4">
+                  {promptPreviewSystem}
+                </pre>
+                {promptPreviewMessage !== null && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-mono text-zinc-500">mensaje de usuario:</p>
+                    <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap leading-relaxed bg-zinc-900 border border-white/[0.06] rounded-lg p-4">
+                      {promptPreviewMessage}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

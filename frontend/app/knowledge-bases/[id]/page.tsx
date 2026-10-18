@@ -6,7 +6,7 @@ import Link from "next/link";
 import { api, KnowledgeBase, KnowledgeFile, Run, SearchResult, KNOWLEDGE_TOOLS, KNOWLEDGE_TOOL_GROUPS } from "@/lib/api";
 import { InfoMessage } from "@/components/LogStream";
 import { fmtTokens, generateUUID } from "@/lib/utils";
-import { Copy, Check, Code, Pencil, RotateCcw, Save, Trash2, Eye } from "lucide-react";
+import { Copy, Check, Code, Pencil, RotateCcw, Save, Trash2, Eye, Info } from "lucide-react";
 import hljs from "highlight.js";
 
 const asUTC = (s: string) => new Date(s.endsWith("Z") ? s : s + "Z");
@@ -259,6 +259,7 @@ export default function KnowledgeBaseDetail() {
   const [promptPreview, setPromptPreview] = useState("");
   const [loadingPromptPreview, setLoadingPromptPreview] = useState(false);
   const [promptPreviewError, setPromptPreviewError] = useState("");
+  const [showPromptInfo, setShowPromptInfo] = useState(false);
 
   // Tools state
   const [chatTools, setChatTools] = useState<string[]>(["Read", "Write"]);
@@ -1414,15 +1415,33 @@ export default function KnowledgeBaseDetail() {
             className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-zinc-950 border border-zinc-800 rounded-xl p-6 shadow-xl space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-mono font-semibold text-zinc-200">Preview del system prompt</h2>
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-1.5">
+                <h2 className="text-sm font-mono font-semibold text-zinc-200">Preview del system prompt</h2>
+                <button
+                  type="button"
+                  onClick={() => setShowPromptInfo((v) => !v)}
+                  className="text-zinc-600 hover:text-zinc-300 transition-colors"
+                  aria-label="Qué es esto"
+                >
+                  <Info size={13} />
+                </button>
+              </div>
               <button
                 onClick={() => setShowPromptPreview(false)}
-                className="text-zinc-600 hover:text-zinc-300 text-lg leading-none"
+                className="text-zinc-600 hover:text-zinc-300 text-lg leading-none shrink-0"
               >
                 ×
               </button>
             </div>
+            {showPromptInfo && (
+              <p className="text-xs font-mono text-zinc-500 leading-relaxed -mt-2">
+                Esto es lo que recibe el agente cuando chateas directamente con esta base: tus
+                instrucciones libres + las restricciones marcadas arriba, más el índice (<code className="text-zinc-400">knowledge.md</code>) y
+                el árbol de directorio. Si otro agente usa esta base como contexto, las
+                restricciones se mantienen pero se omiten las instrucciones libres.
+              </p>
+            )}
             {loadingPromptPreview ? (
               <p className="text-xs font-mono text-zinc-600">cargando···</p>
             ) : promptPreviewError ? (

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..database import get_session
-from ..models import AgentDefinition
+from ..models import AgentDefinition, KnowledgeBase
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -85,6 +85,19 @@ class AgentGenerateResponse(BaseModel):
     knowledge_base_id: str | None = None
 
 
+class SystemPromptPreview(BaseModel):
+    system_prompt: str
+
+
+class FullPromptPreviewRequest(BaseModel):
+    input_params: dict = {}
+
+
+class FullPromptPreview(BaseModel):
+    system_prompt: str
+    user_message: str
+
+
 @router.get("")
 def list_agents(session: SessionDep) -> list[AgentDefinition]:
     return session.exec(select(AgentDefinition)).all()
@@ -95,7 +108,6 @@ async def generate_agent(req: AgentGenerateRequest, session: SessionDep) -> Agen
     if not req.description.strip():
         raise HTTPException(400, "La descripción no puede estar vacía")
 
-    from ..models import KnowledgeBase
     from sqlmodel import select as sa_select
     knowledge_agents = session.exec(sa_select(KnowledgeBase)).all()
     if knowledge_agents:
@@ -180,6 +192,42 @@ def get_agent(agent_id: str, session: SessionDep) -> AgentDefinition:
     if not agent:
         raise HTTPException(404, "Agent not found")
     return agent
+
+
+def _resolve_system_prompt(agent: AgentDefinition, session: SessionDep) -> str:
+    system_prompt = agent.system_prompt
+    if agent.knowledge_base_id:
+        kb = session.get(KnowledgeBase, agent.knowledge_base_id)
+        if kb:
+            from ..runner.knowledge import _build_system_prompt, ensure_knowledge_dir
+            ensure_knowledge_dir(kb)
+            knowledge_ctx = _build_system_prompt(kb, mode="context")
+            system_prompt = knowledge_ctx + "\n\n---\n\n" + agent.system_prompt
+    return system_prompt
+
+
+@router.get("/{agent_id}/preview-prompt")
+def preview_prompt(agent_id: str, session: SessionDep) -> SystemPromptPreview:
+    agent = session.get(AgentDefinition, agent_id)
+    if not agent:
+        raise HTTPException(404, "Agent not found")
+    return SystemPromptPreview(system_prompt=_resolve_system_prompt(agent, session))
+
+
+@router.post("/{agent_id}/preview-prompt")
+def preview_full_prompt(
+    agent_id: str, req: FullPromptPreviewRequest, session: SessionDep
+) -> FullPromptPreview:
+    agent = session.get(AgentDefinition, agent_id)
+    if not agent:
+        raise HTTPException(404, "Agent not found")
+
+    from ..runner.claude_code import _build_user_message
+
+    return FullPromptPreview(
+        system_prompt=_resolve_system_prompt(agent, session),
+        user_message=_build_user_message(req.input_params, agent_id),
+    )
 
 
 @router.put("/{agent_id}")
